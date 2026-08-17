@@ -27,6 +27,30 @@
   isolation: isolate;
 }
 
+@media (prefers-color-scheme: dark) {
+  .page {
+    --ink: #f0eff5;
+    --muted: #93929f;
+    --bg: #0c0b10;
+    --card: #17161d;
+    --line: #29282f;
+    --inset: #1c1b22;
+    --inset-2: #232229;
+    --pink: #e97a54;
+    --pink-soft: rgba(233, 122, 84, 0.16);
+    --pink-soft-2: rgba(233, 122, 84, 0.26);
+    --pink-text: #f0946f;
+    --green: #2fbf85;
+    --green-soft: rgba(47, 191, 133, 0.14);
+    --danger: #f06b6f;
+  }
+
+  .receiptOk { border-color: rgba(47, 191, 133, 0.35); }
+  .receiptError { border-color: rgba(240, 107, 111, 0.35); background: rgba(240, 107, 111, 0.12); }
+  .verdictPass { border-color: rgba(47, 191, 133, 0.35); }
+  .verdictFail { border-color: rgba(240, 107, 111, 0.35); background: rgba(240, 107, 111, 0.12); }
+}
+
 /* --- Scattered token-orb background ------------------------------------- */
 .aurora {
   position: fixed;
@@ -65,6 +89,9 @@
   height: 26px;
   width: auto;
   display: block;
+}
+@media (prefers-color-scheme: dark) {
+  .brandImg { filter: brightness(0) invert(1); }
 }
 
 /* --- Hero ---------------------------------------------------------------- */
@@ -163,7 +190,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 7px 0;
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: 1px solid var(--line);
   font-size: 13px;
 }
 .receiptRow:first-child { border-top: none; }
@@ -185,8 +212,8 @@
   margin: 12px 0 0;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(0, 0, 0, 0.04);
-  color: #24242c;
+  background: var(--inset);
+  color: var(--ink);
   font-family: var(--font-mono-ui), monospace;
   font-size: 12px;
   line-height: 1.55;
@@ -254,7 +281,7 @@
   font-size: 13px;
   font-weight: 700;
   color: var(--ink);
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 7px 7px 7px 13px;
@@ -325,7 +352,7 @@
   padding: 13px 14px;
   border: 1px solid var(--line);
   border-radius: 15px;
-  background: #fff;
+  background: var(--card);
   cursor: pointer;
   text-align: left;
   transition: background 140ms, border-color 140ms;
@@ -357,7 +384,7 @@
 }
 .footer a { color: var(--pink-text); text-decoration: none; font-weight: 500; }
 .footer a:hover { text-decoration: underline; }
-.footerDot { color: #d8d8de; }
+.footerDot { color: var(--line); }
 
 /* --- Tabbed action interface (Umbra-style) ------------------------------ */
 .panel { width: min(520px, calc(100vw - 32px)); margin: 0 auto; }
@@ -408,7 +435,7 @@
   font-weight: 600;
   font-size: 15px;
   color: var(--ink);
-  background: #fff;
+  background: var(--card);
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 7px 15px 7px 8px;
@@ -440,7 +467,7 @@
   border-radius: 16px;
   font-size: 14px;
   color: var(--muted);
-  background: #fff;
+  background: var(--card);
 }
 .feeVal { display: inline-flex; align-items: center; gap: 7px; color: var(--ink); font-weight: 500; }
 
