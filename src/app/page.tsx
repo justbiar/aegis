@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { ShieldCheck, ScanSearch, Lock, KeyRound, ExternalLink } from "lucide-react";
 import { Navbar } from "./components/Navbar";
+import { RegistryTable } from "./components/RegistryTable";
 import WalletAccountV6Tag from "./components/client/WalletHandle/WalletAccountV6Tag";
 import styles from "./uni.module.css";
 
@@ -142,6 +143,26 @@ export default function Page() {
             on-chain, and payout to a verified owner is a private transfer,
             not a public, front-runnable one.
           </p>
+        </div>
+      </section>
+
+      {/* ── REGISTRY SCAN ───────────────────────────────────────────────── */}
+      <section id="registry" className="py-24">
+        <div className="section-container">
+          <div className="text-center mb-12">
+            <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-3">
+              Coverage
+            </p>
+            <h2 className="text-3xl font-bold text-black dark:text-white mb-3">
+              Watching the sprint's own registry
+            </h2>
+            <p className="text-ls-gray-500 dark:text-ls-gray-400 max-w-xl mx-auto">
+              Every project that registers for the STRK20 Private Sprint gets
+              scanned — fellow builders shipping fast are exactly who leaks a
+              key by accident.
+            </p>
+          </div>
+          <RegistryTable />
         </div>
       </section>
 
