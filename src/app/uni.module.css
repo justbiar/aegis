@@ -93,6 +93,11 @@
 @media (prefers-color-scheme: dark) {
   .brandImg { filter: brightness(0) invert(1); }
 }
+.navActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 
 /* --- Hero ---------------------------------------------------------------- */
 .hero {

@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter, Space_Mono } from 'next/font/google'
+import { SessionProvider } from 'next-auth/react'
 import './globals.css'
 
 // Clean neutral grotesque for everything (matches the Uniswap reference); a mono
@@ -32,7 +33,9 @@ export default function RootLayout({
       className={`${inter.variable} ${spaceMono.variable}`}
       suppressHydrationWarning
     >
-      <body>{children}</body>
+      <body>
+        <SessionProvider>{children}</SessionProvider>
+      </body>
     </html>
   )
 }

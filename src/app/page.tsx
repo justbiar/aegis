@@ -3,6 +3,7 @@
 import styles from './uni.module.css';
 import SelectWallet from './components/client/WalletHandle/SelectWallet';
 import WalletAccountV6Tag from './components/client/WalletHandle/WalletAccountV6Tag';
+import ConnectGithub from './components/client/GithubHandle/ConnectGithub';
 
 export default function Page() {
   return (
@@ -12,7 +13,10 @@ export default function Page() {
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src="/tokens/strk20.png" alt="STRK20" className={styles.brandImg} />
         </div>
-        <SelectWallet variant="nav" />
+        <div className={styles.navActions}>
+          <ConnectGithub />
+          <SelectWallet variant="nav" />
+        </div>
       </nav>
 
       <header className={styles.hero}>
