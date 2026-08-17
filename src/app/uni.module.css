@@ -2,22 +2,6 @@
    clean white, scattered blurred token-orbs, flat card, soft-pink pills. */
 
 .page {
-  --ink: #0d0e0e;
-  --muted: #7d7d8a;
-  --bg: #ffffff;
-  --card: #ffffff;
-  --line: #eaeaef;
-  --inset: #f5f5f7;
-  --inset-2: #ededf1;
-  /* Lightened terracotta (adapted from #d75821) - var names kept for continuity. */
-  --pink: #e56b43;
-  --pink-soft: #fdefe9;
-  --pink-soft-2: #f9ddd1;
-  --pink-text: #b0491f;
-  --green: #0e9f6e;
-  --green-soft: #e7f7ef;
-  --danger: #e5484d;
-
   position: relative;
   min-height: 100vh;
   background: var(--bg);
@@ -28,23 +12,6 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  .page {
-    --ink: #f0eff5;
-    --muted: #93929f;
-    --bg: #0c0b10;
-    --card: #17161d;
-    --line: #29282f;
-    --inset: #1c1b22;
-    --inset-2: #232229;
-    --pink: #e97a54;
-    --pink-soft: rgba(233, 122, 84, 0.16);
-    --pink-soft-2: rgba(233, 122, 84, 0.26);
-    --pink-text: #f0946f;
-    --green: #2fbf85;
-    --green-soft: rgba(47, 191, 133, 0.14);
-    --danger: #f06b6f;
-  }
-
   .receiptOk { border-color: rgba(47, 191, 133, 0.35); }
   .receiptError { border-color: rgba(240, 107, 111, 0.35); background: rgba(240, 107, 111, 0.12); }
   .verdictPass { border-color: rgba(47, 191, 133, 0.35); }
