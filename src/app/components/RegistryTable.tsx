@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, RefreshCw, Loader2 } from "lucide-react";
+import { ExternalLink, RefreshCw, Loader2, ScanSearch } from "lucide-react";
 import type { RegistryEntry } from "@/lib/registry";
+import type { ScanResult } from "@/lib/scan";
 
 export function RegistryTable() {
   const [entries, setEntries] = useState<RegistryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [scanResults, setScanResults] = useState<Record<string, ScanResult>>({});
+  const [scanning, setScanning] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -24,13 +27,29 @@ export function RegistryTable() {
     }
   };
 
+  const scan = async () => {
+    setScanning(true);
+    try {
+      const res = await fetch("/api/scan-registry");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Scan failed");
+      const byRepo: Record<string, ScanResult> = {};
+      for (const r of data.results as ScanResult[]) byRepo[r.repoUrl] = r;
+      setScanResults(byRepo);
+    } catch (e: any) {
+      setError(e.message ?? "Scan failed");
+    } finally {
+      setScanning(false);
+    }
+  };
+
   useEffect(() => {
     load();
   }, []);
 
   return (
     <div className="ls-card p-0 overflow-hidden">
-      <div className="flex items-center justify-between px-5 py-4 border-b border-ls-gray-200 dark:border-ls-gray-800">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-4 border-b border-ls-gray-200 dark:border-ls-gray-800">
         <div>
           <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400">
             STRK20 Private Sprint
@@ -39,15 +58,26 @@ export function RegistryTable() {
             {entries.length} registered {entries.length === 1 ? "project" : "projects"}
           </p>
         </div>
-        <button
-          onClick={load}
-          disabled={loading}
-          className="text-xs font-semibold text-ls-gray-500 dark:text-ls-gray-400 hover:text-black
-            dark:hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-50"
-        >
-          {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-          Refresh
-        </button>
+        <div className="flex items-center gap-4 shrink-0">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="text-xs font-semibold text-ls-gray-500 dark:text-ls-gray-400 hover:text-black
+              dark:hover:text-white transition-colors flex items-center gap-1.5 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
+            Refresh
+          </button>
+          <button
+            onClick={scan}
+            disabled={scanning || entries.length === 0}
+            className="text-xs font-semibold text-black dark:text-white flex items-center gap-1.5
+              disabled:opacity-50"
+          >
+            {scanning ? <Loader2 size={12} className="animate-spin" /> : <ScanSearch size={12} />}
+            {scanning ? "Scanning…" : "Scan registry"}
+          </button>
+        </div>
       </div>
 
       {error ? (
@@ -64,29 +94,42 @@ export function RegistryTable() {
               </tr>
             </thead>
             <tbody>
-              {entries.map((e) => (
-                <tr key={e.repo_url}>
-                  <td className="font-semibold text-black dark:text-white">
-                    {e.name ?? e.repo_url.split("/").pop()}
-                  </td>
-                  <td className="text-ls-gray-500 dark:text-ls-gray-400">
-                    {e.category ?? "Other"}
-                  </td>
-                  <td>
-                    <a
-                      href={e.repo_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="link-arrow text-xs"
-                    >
-                      Repo <ExternalLink size={11} />
-                    </a>
-                  </td>
-                  <td>
-                    <span className="tag-pending">Not scanned yet</span>
-                  </td>
-                </tr>
-              ))}
+              {entries.map((e) => {
+                const result = scanResults[e.repo_url];
+                return (
+                  <tr key={e.repo_url}>
+                    <td className="font-semibold text-black dark:text-white">
+                      {e.name ?? e.repo_url.split("/").pop()}
+                    </td>
+                    <td className="text-ls-gray-500 dark:text-ls-gray-400">
+                      {e.category ?? "Other"}
+                    </td>
+                    <td>
+                      <a
+                        href={e.repo_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="link-arrow text-xs"
+                      >
+                        Repo <ExternalLink size={11} />
+                      </a>
+                    </td>
+                    <td>
+                      {!result && <span className="tag-pending">Not scanned yet</span>}
+                      {result?.status === "clean" && <span className="tag-clean">Clean</span>}
+                      {result?.status === "error" && <span className="tag-error">Scan error</span>}
+                      {result?.status === "leak" && (
+                        <span
+                          className="tag-leak"
+                          title={result.findings.map((f) => `${f.file}: ${f.masked}`).join("\n")}
+                        >
+                          Possible exposure ({result.findings.length})
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {loading && entries.length === 0 && (
