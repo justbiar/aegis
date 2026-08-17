@@ -20,7 +20,17 @@ Early build, part of the [STRK20 Private Sprint](https://strk20.starknet.io/hack
 
 ## How to run locally
 
-TBD — scanner and claim-verification service are in progress.
+```bash
+npm install
+cp .env.example .env.local     # add your Alchemy Starknet RPC key
+npm run dev                    # http://localhost:3000
+```
+
+Scanner and claim-verification service are in progress.
+
+## Credits
+
+UI built on top of the [STRK20 starter kit](https://github.com/Akashneelesh/strk20-starter-kit) (MIT).
 
 ## License
 
