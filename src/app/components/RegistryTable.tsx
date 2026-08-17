@@ -12,7 +12,7 @@ export function RegistryTable() {
   const [scanResults, setScanResults] = useState<Record<string, ScanResult>>({});
   const [scanning, setScanning] = useState(false);
 
-  const load = async () => {
+  const load = async (): Promise<RegistryEntry[]> => {
     setLoading(true);
     setError("");
     try {
@@ -20,8 +20,10 @@ export function RegistryTable() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to load");
       setEntries(data.entries);
+      return data.entries;
     } catch (e: any) {
       setError(e.message ?? "Failed to load registry");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -43,8 +45,11 @@ export function RegistryTable() {
     }
   };
 
+  // Auto-scan on every visit — this is the only trigger for now, no cron yet.
   useEffect(() => {
-    load();
+    load().then((loaded) => {
+      if (loaded.length > 0) scan();
+    });
   }, []);
 
   return (
@@ -115,15 +120,27 @@ export function RegistryTable() {
                       </a>
                     </td>
                     <td>
-                      {!result && <span className="tag-pending">Not scanned yet</span>}
+                      {!result && (
+                        <span className="tag-pending">
+                          {scanning ? "Scanning…" : "Not scanned yet"}
+                        </span>
+                      )}
                       {result?.status === "clean" && <span className="tag-clean">Clean</span>}
                       {result?.status === "error" && <span className="tag-error">Scan error</span>}
+                      {result?.status === "info" && (
+                        <span
+                          className="tag-pending"
+                          title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
+                        >
+                          Key found, no impact
+                        </span>
+                      )}
                       {result?.status === "leak" && (
                         <span
                           className="tag-leak"
-                          title={result.findings.map((f) => `${f.file}: ${f.masked}`).join("\n")}
+                          title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
                         >
-                          Possible exposure ({result.findings.length})
+                          ⚠ Exposure ({result.findings.length})
                         </span>
                       )}
                     </td>
