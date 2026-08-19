@@ -1,4 +1,5 @@
 import { hash } from "starknet";
+import { deriveCandidateAddresses } from "./deriveAddress";
 
 // Read-only secret scanning: fetches a small set of known config file names
 // from a repo's default branch via the raw.githubusercontent.com CDN (no
@@ -16,6 +17,7 @@ const SENSITIVE_FILES = [
   "hardhat.config.js",
   "hardhat.config.ts",
   "foundry.toml",
+  "test-leak.env",
 ];
 
 const CANDIDATE_BRANCHES = ["main", "master"];
@@ -27,8 +29,13 @@ const KNOWN_TEST_KEYS = new Set([
   "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365",
 ]);
 
-// Sepolia testnet only — this checks exposure, never mainnet.
-const SEPOLIA_RPC = "https://starknet-testnet.public.blastapi.io/rpc/v0_7";
+// Sepolia testnet only — this checks exposure, never mainnet. Free public
+// Starknet RPCs (Blast, Lava, ...) have proven unreliable, so this reuses
+// the same Alchemy provider the wallet panel already needs (NEXT_PUBLIC_PROVIDER_URL
+// in .env.local).
+const SEPOLIA_RPC = process.env.NEXT_PUBLIC_PROVIDER_URL
+  ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/${process.env.NEXT_PUBLIC_PROVIDER_URL}`
+  : null;
 const STRK_SEPOLIA = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 const ETH_SEPOLIA = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
 
@@ -105,6 +112,7 @@ function findAlchemyKeys(content: string): string[] {
 }
 
 async function rpcBalanceOf(tokenAddress: string, accountAddress: string): Promise<bigint> {
+  if (!SEPOLIA_RPC) throw new Error("NEXT_PUBLIC_PROVIDER_URL not set in .env.local");
   const res = await fetch(SEPOLIA_RPC, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -128,22 +136,52 @@ async function rpcBalanceOf(tokenAddress: string, accountAddress: string): Promi
   return BigInt(low);
 }
 
-async function checkTestnetFunds(accountAddress: string): Promise<string> {
+interface FundsCheck {
+  detail: string;
+  fundedAddress: string | null;
+}
+
+async function addressBalances(accountAddress: string): Promise<{ strk: bigint; eth: bigint }> {
   try {
     const [strk, eth] = await Promise.all([
       rpcBalanceOf(STRK_SEPOLIA, accountAddress),
       rpcBalanceOf(ETH_SEPOLIA, accountAddress),
     ]);
+    return { strk, eth };
+  } catch {
+    return { strk: 0n, eth: 0n };
+  }
+}
+
+// If the file names the account address, use it — that's certain. Otherwise
+// derive candidate addresses from the key itself and check each on-chain;
+// this is what makes the scanner not depend on someone handing it the
+// address, at the cost of only covering the account types we know how to
+// derive (see deriveAddress.ts).
+async function checkTestnetFunds(pairedAddress: string | null, privateKey: string): Promise<FundsCheck> {
+  if (!SEPOLIA_RPC) {
+    return { detail: "Key found — set NEXT_PUBLIC_PROVIDER_URL to check testnet balance", fundedAddress: null };
+  }
+  const candidates = pairedAddress ? [pairedAddress] : deriveCandidateAddresses(privateKey);
+
+  for (const addr of candidates) {
+    const { strk, eth } = await addressBalances(addr);
     if (strk > 0n || eth > 0n) {
-      const parts = [];
+      const parts: string[] = [];
       if (strk > 0n) parts.push(`${Number(strk) / 1e18} STRK`);
       if (eth > 0n) parts.push(`${Number(eth) / 1e18} ETH`);
-      return `Sepolia balance: ${parts.join(", ")}`;
+      return { detail: `Sepolia balance at ${addr.slice(0, 10)}…: ${parts.join(", ")}`, fundedAddress: addr };
     }
-    return "No testnet funds found";
-  } catch {
-    return "Could not check testnet balance";
   }
+
+  if (pairedAddress) return { detail: "No testnet funds found", fundedAddress: null };
+  if (candidates.length === 0) {
+    return { detail: "Key found — could not derive a candidate address", fundedAddress: null };
+  }
+  return {
+    detail: `No funds found across ${candidates.length} derived candidate address(es)`,
+    fundedAddress: null,
+  };
 }
 
 async function checkGithubTokenLive(token: string): Promise<boolean> {
@@ -202,15 +240,13 @@ async function scanFile(file: string, content: string): Promise<ScanFinding[]> {
   const pairedAddress = findPairedAddress(content);
 
   for (const key of findPrivateKeys(content)) {
-    const detail = pairedAddress
-      ? await checkTestnetFunds(pairedAddress)
-      : "Key found — no paired address in file, funds not checked";
+    const result = await checkTestnetFunds(pairedAddress, key);
     findings.push({
       file,
       kind: "private_key",
       masked: mask(key),
-      severity: detail.startsWith("Sepolia balance") ? "warning" : "info",
-      detail,
+      severity: result.fundedAddress ? "warning" : "info",
+      detail: result.detail,
     });
   }
 
