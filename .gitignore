@@ -48,6 +48,10 @@ A1priv/A1priv.ts
 # cairo build artifacts
 /cairo/target/
 
+# unrelated project, sits here by accident
+/ArfheWallet.zip
+/ArfheWallet/
+
 # local notes, never published — README.md is the one exception (already
 # tracked; `git add README.md` still works despite this wildcard)
 *.md
