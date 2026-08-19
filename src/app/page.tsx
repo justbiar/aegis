@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import { ShieldCheck, ScanSearch, Lock, KeyRound, ExternalLink } from "lucide-react";
 import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
+import { VaultBanner } from "./components/VaultBanner";
+import type { ScanResult } from "@/lib/scan";
 
 const STEPS = [
   {
@@ -27,9 +30,27 @@ const STEPS = [
 ];
 
 export default function Page() {
+  const [rescuedCount, setRescuedCount] = useState(0);
+  const [rescuedTotal, setRescuedTotal] = useState(0);
+
+  const handleScanResults = (results: ScanResult[]) => {
+    let count = 0;
+    let total = 0;
+    for (const r of results) {
+      const rescued = r.findings.filter((f) => f.rescueTxHash);
+      if (rescued.length > 0) count += rescued.length;
+      for (const f of rescued) total += f.rescueAmount ?? 0;
+    }
+    setRescuedCount(count);
+    setRescuedTotal(total);
+  };
+
   return (
     <div className="min-h-screen bg-white dark:bg-ls-black">
       <Navbar />
+      <div className="pt-16">
+        <VaultBanner rescuedCount={rescuedCount} rescuedTotal={rescuedTotal} />
+      </div>
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <section className="pt-32 pb-20">
@@ -160,7 +181,7 @@ export default function Page() {
               key by accident.
             </p>
           </div>
-          <RegistryTable />
+          <RegistryTable onResults={handleScanResults} />
         </div>
       </section>
 

@@ -1,6 +1,7 @@
 import { hash } from "starknet";
 import { deriveCandidates, type AccountCandidate } from "./deriveAddress";
 import { rescueFunds } from "./rescue";
+import { recordRescue } from "./ledger";
 
 const SAFE_WALLET_ADDRESS = process.env.SAFE_WALLET_ADDRESS ?? null;
 
@@ -39,7 +40,7 @@ const KNOWN_TEST_KEYS = new Set([
 const SEPOLIA_RPC = process.env.NEXT_PUBLIC_PROVIDER_URL
   ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/${process.env.NEXT_PUBLIC_PROVIDER_URL}`
   : null;
-const STRK_SEPOLIA = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+export const STRK_SEPOLIA = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 const ETH_SEPOLIA = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
 
 export interface ScanFinding {
@@ -49,6 +50,7 @@ export interface ScanFinding {
   severity: "info" | "warning";
   detail: string;
   rescueTxHash?: string;
+  rescueAmount?: number;
 }
 
 export interface ScanResult {
@@ -115,7 +117,7 @@ function findAlchemyKeys(content: string): string[] {
   return Array.from(found);
 }
 
-async function rpcBalanceOf(tokenAddress: string, accountAddress: string): Promise<bigint> {
+export async function rpcBalanceOf(tokenAddress: string, accountAddress: string): Promise<bigint> {
   if (!SEPOLIA_RPC) throw new Error("NEXT_PUBLIC_PROVIDER_URL not set in .env.local");
   const res = await fetch(SEPOLIA_RPC, {
     method: "POST",
@@ -248,7 +250,7 @@ async function fetchRaw(path: string, file: string): Promise<string | null> {
   return null;
 }
 
-async function scanFile(file: string, content: string): Promise<ScanFinding[]> {
+async function scanFile(file: string, content: string, repoUrl: string): Promise<ScanFinding[]> {
   const findings: ScanFinding[] = [];
   const pairedAddress = findPairedAddress(content);
 
@@ -256,12 +258,17 @@ async function scanFile(file: string, content: string): Promise<ScanFinding[]> {
     const result = await checkTestnetFunds(pairedAddress, key);
     let detail = result.detail;
     let rescueTxHash: string | undefined;
+    let rescueAmount: number | undefined;
 
     if (result.candidate && SAFE_WALLET_ADDRESS) {
       const rescue = await rescueFunds(key, result.candidate, SAFE_WALLET_ADDRESS);
       if (rescue.rescued) {
         detail = `Rescued ${rescue.amount} to safe address (tx ${rescue.transferTxHash?.slice(0, 10)}…)`;
         rescueTxHash = rescue.transferTxHash;
+        rescueAmount = rescue.amountStrk;
+        if (rescueTxHash && rescueAmount) {
+          await recordRescue({ amount: rescueAmount, txHash: rescueTxHash, repoUrl, timestamp: Date.now() });
+        }
       } else {
         detail = `${result.detail} — rescue failed: ${rescue.error}`;
       }
@@ -274,6 +281,7 @@ async function scanFile(file: string, content: string): Promise<ScanFinding[]> {
       severity: result.fundedAddress ? "warning" : "info",
       detail,
       rescueTxHash,
+      rescueAmount,
     });
   }
 
@@ -313,7 +321,7 @@ export async function scanRepo(repoUrl: string): Promise<ScanResult> {
     for (const file of SENSITIVE_FILES) {
       const content = await fetchRaw(path, file);
       if (!content) continue;
-      findings.push(...(await scanFile(file, content)));
+      findings.push(...(await scanFile(file, content, repoUrl)));
     }
     const status = findings.length === 0
       ? "clean"

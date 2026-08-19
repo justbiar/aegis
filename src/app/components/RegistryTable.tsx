@@ -5,7 +5,11 @@ import { ExternalLink, RefreshCw, Loader2, ScanSearch } from "lucide-react";
 import type { RegistryEntry } from "@/lib/registry";
 import type { ScanResult } from "@/lib/scan";
 
-export function RegistryTable() {
+interface RegistryTableProps {
+  onResults?: (results: ScanResult[]) => void;
+}
+
+export function RegistryTable({ onResults }: RegistryTableProps = {}) {
   const [entries, setEntries] = useState<RegistryEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -35,9 +39,11 @@ export function RegistryTable() {
       const res = await fetch("/api/scan-registry");
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Scan failed");
+      const results = data.results as ScanResult[];
       const byRepo: Record<string, ScanResult> = {};
-      for (const r of data.results as ScanResult[]) byRepo[r.repoUrl] = r;
+      for (const r of results) byRepo[r.repoUrl] = r;
       setScanResults(byRepo);
+      onResults?.(results);
     } catch (e: any) {
       setError(e.message ?? "Scan failed");
     } finally {

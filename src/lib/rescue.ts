@@ -15,6 +15,7 @@ export interface RescueResult {
   deployTxHash?: string;
   transferTxHash?: string;
   amount?: string;
+  amountStrk?: number;
   error?: string;
 }
 
@@ -81,6 +82,7 @@ export async function rescueFunds(
       deployTxHash,
       transferTxHash: transaction_hash,
       amount: `${Number(amount) / 1e18} STRK`,
+      amountStrk: Number(amount) / 1e18,
     };
   } catch (err: any) {
     return { rescued: false, deployTxHash, error: err?.message ?? "Rescue failed" };
