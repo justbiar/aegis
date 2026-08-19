@@ -8,7 +8,7 @@ import ConnectGithub from "./client/GithubHandle/ConnectGithub";
 
 const NAV_LINKS = [
   { label: "How it works", href: "#how-it-works" },
-  { label: "Claim", href: "#claim" },
+  { label: "Coverage", href: "#registry" },
 ];
 
 export function Navbar() {

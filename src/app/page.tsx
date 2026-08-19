@@ -4,8 +4,6 @@ import { motion } from "framer-motion";
 import { ShieldCheck, ScanSearch, Lock, KeyRound, ExternalLink } from "lucide-react";
 import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
-import WalletAccountV6Tag from "./components/client/WalletHandle/WalletAccountV6Tag";
-import styles from "./uni.module.css";
 
 const STEPS = [
   {
@@ -60,8 +58,8 @@ export default function Page() {
             </p>
 
             <div className="flex flex-wrap items-center gap-4">
-              <a href="#claim" className="btn-primary text-base px-8 py-3.5">
-                Claim your funds →
+              <a href="#registry" className="btn-primary text-base px-8 py-3.5">
+                See it in action →
               </a>
               <a
                 href="https://github.com/justbiar/aegis"
@@ -163,23 +161,6 @@ export default function Page() {
             </p>
           </div>
           <RegistryTable />
-        </div>
-      </section>
-
-      {/* ── CLAIM ────────────────────────────────────────────────────────── */}
-      <section id="claim" className="py-24">
-        <div className="section-container text-center mb-12">
-          <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-3">
-            Claim
-          </p>
-          <h2 className="text-3xl font-bold text-black dark:text-white">
-            Shield, unshield, and claim
-          </h2>
-        </div>
-        <div className={styles.page} style={{ minHeight: "auto", background: "transparent" }}>
-          <main>
-            <WalletAccountV6Tag />
-          </main>
         </div>
       </section>
 
