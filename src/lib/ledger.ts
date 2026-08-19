@@ -23,6 +23,19 @@ export interface RescueRecord {
 
 export const ledgerAvailable = Boolean(KV_URL && KV_TOKEN);
 
+// One real rescue happened before this ledger existed, so it was never
+// logged. Found by replaying Transfer events *from* the leaked test
+// account specifically (test-leak.env) — cheap and exact, unlike scanning
+// the whole STRK contract's history. Verified against the actual tx.
+const SEEDED_RECORDS: RescueRecord[] = [
+  {
+    amount: 84.87346099247694,
+    txHash: "0x672742d0cf63167ba4f87017d6e2852a403ddcc060ff8d297988e9ccc5e6e1d",
+    repoUrl: "https://github.com/justbiar/aegis",
+    timestamp: 1787162397000,
+  },
+];
+
 export async function recordRescue(record: RescueRecord): Promise<void> {
   if (!KV_URL || !KV_TOKEN) return;
   try {
@@ -35,15 +48,15 @@ export async function recordRescue(record: RescueRecord): Promise<void> {
 }
 
 export async function getLedger(): Promise<RescueRecord[]> {
-  if (!KV_URL || !KV_TOKEN) return [];
+  if (!KV_URL || !KV_TOKEN) return SEEDED_RECORDS;
   try {
     const res = await fetch(`${KV_URL}/lrange/${LEDGER_KEY}/0/-1`, {
       headers: { Authorization: `Bearer ${KV_TOKEN}` },
     });
     const data = await res.json();
     const raw: string[] = data.result ?? [];
-    return raw.map((s) => JSON.parse(s) as RescueRecord);
+    return [...SEEDED_RECORDS, ...raw.map((s) => JSON.parse(s) as RescueRecord)];
   } catch {
-    return [];
+    return SEEDED_RECORDS;
   }
 }

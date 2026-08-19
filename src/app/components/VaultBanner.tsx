@@ -92,7 +92,7 @@ export function VaultBanner({ rescuedCount, rescuedTotal }: VaultBannerProps) {
         <div className="flex items-center gap-8">
           <div className="text-right">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 mb-0.5">
-              Kasadaki bakiye
+              Vault balance
             </p>
             <p className="hero-stat text-2xl text-white">
               {balance === null ? (
@@ -110,7 +110,7 @@ export function VaultBanner({ rescuedCount, rescuedTotal }: VaultBannerProps) {
 
           <div className="text-right">
             <p className="text-[11px] font-semibold uppercase tracking-widest text-white/40 mb-0.5">
-              Toplam kurtarılan
+              Total rescued
             </p>
             <p className="hero-stat text-2xl text-white">
               {ledgerAvailable || totalCount > 0 ? (
@@ -118,11 +118,11 @@ export function VaultBanner({ rescuedCount, rescuedTotal }: VaultBannerProps) {
                   {animatedRescued.toFixed(2)}{" "}
                   <span className="text-sm font-semibold text-white/40">STRK</span>
                   <span className="text-sm font-semibold text-white/40 ml-1.5">
-                    · {totalCount} hesap
+                    · {totalCount} {totalCount === 1 ? "account" : "accounts"}
                   </span>
                 </>
               ) : (
-                <span className="text-white/30 text-base font-medium">Kayıt tutulmuyor</span>
+                <span className="text-white/30 text-base font-medium">Not tracked yet</span>
               )}
             </p>
           </div>
