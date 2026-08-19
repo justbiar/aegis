@@ -1,5 +1,8 @@
 import { hash } from "starknet";
-import { deriveCandidateAddresses } from "./deriveAddress";
+import { deriveCandidates, type AccountCandidate } from "./deriveAddress";
+import { rescueFunds } from "./rescue";
+
+const SAFE_WALLET_ADDRESS = process.env.SAFE_WALLET_ADDRESS ?? null;
 
 // Read-only secret scanning: fetches a small set of known config file names
 // from a repo's default branch via the raw.githubusercontent.com CDN (no
@@ -45,6 +48,7 @@ export interface ScanFinding {
   masked: string;
   severity: "info" | "warning";
   detail: string;
+  rescueTxHash?: string;
 }
 
 export interface ScanResult {
@@ -139,6 +143,7 @@ async function rpcBalanceOf(tokenAddress: string, accountAddress: string): Promi
 interface FundsCheck {
   detail: string;
   fundedAddress: string | null;
+  candidate: AccountCandidate | null;
 }
 
 async function addressBalances(accountAddress: string): Promise<{ strk: bigint; eth: bigint }> {
@@ -160,27 +165,35 @@ async function addressBalances(accountAddress: string): Promise<{ strk: bigint; 
 // derive (see deriveAddress.ts).
 async function checkTestnetFunds(pairedAddress: string | null, privateKey: string): Promise<FundsCheck> {
   if (!SEPOLIA_RPC) {
-    return { detail: "Key found — set NEXT_PUBLIC_PROVIDER_URL to check testnet balance", fundedAddress: null };
+    return { detail: "Key found — set NEXT_PUBLIC_PROVIDER_URL to check testnet balance", fundedAddress: null, candidate: null };
   }
-  const candidates = pairedAddress ? [pairedAddress] : deriveCandidateAddresses(privateKey);
+  const derived = deriveCandidates(privateKey);
+  const candidates: AccountCandidate[] = pairedAddress
+    ? [{ address: pairedAddress, classHash: "", calldata: [], salt: "" }]
+    : derived;
 
-  for (const addr of candidates) {
-    const { strk, eth } = await addressBalances(addr);
+  for (const candidate of candidates) {
+    const { strk, eth } = await addressBalances(candidate.address);
     if (strk > 0n || eth > 0n) {
       const parts: string[] = [];
       if (strk > 0n) parts.push(`${Number(strk) / 1e18} STRK`);
       if (eth > 0n) parts.push(`${Number(eth) / 1e18} ETH`);
-      return { detail: `Sepolia balance at ${addr.slice(0, 10)}…: ${parts.join(", ")}`, fundedAddress: addr };
+      return {
+        detail: `Sepolia balance at ${candidate.address.slice(0, 10)}…: ${parts.join(", ")}`,
+        fundedAddress: candidate.address,
+        candidate,
+      };
     }
   }
 
-  if (pairedAddress) return { detail: "No testnet funds found", fundedAddress: null };
+  if (pairedAddress) return { detail: "No testnet funds found", fundedAddress: null, candidate: null };
   if (candidates.length === 0) {
-    return { detail: "Key found — could not derive a candidate address", fundedAddress: null };
+    return { detail: "Key found — could not derive a candidate address", fundedAddress: null, candidate: null };
   }
   return {
     detail: `No funds found across ${candidates.length} derived candidate address(es)`,
     fundedAddress: null,
+    candidate: null,
   };
 }
 
@@ -241,12 +254,26 @@ async function scanFile(file: string, content: string): Promise<ScanFinding[]> {
 
   for (const key of findPrivateKeys(content)) {
     const result = await checkTestnetFunds(pairedAddress, key);
+    let detail = result.detail;
+    let rescueTxHash: string | undefined;
+
+    if (result.candidate && SAFE_WALLET_ADDRESS) {
+      const rescue = await rescueFunds(key, result.candidate, SAFE_WALLET_ADDRESS);
+      if (rescue.rescued) {
+        detail = `Rescued ${rescue.amount} to safe address (tx ${rescue.transferTxHash?.slice(0, 10)}…)`;
+        rescueTxHash = rescue.transferTxHash;
+      } else {
+        detail = `${result.detail} — rescue failed: ${rescue.error}`;
+      }
+    }
+
     findings.push({
       file,
       kind: "private_key",
       masked: mask(key),
       severity: result.fundedAddress ? "warning" : "info",
-      detail: result.detail,
+      detail,
+      rescueTxHash,
     });
   }
 

@@ -135,14 +135,27 @@ export function RegistryTable() {
                           Key found, no impact
                         </span>
                       )}
-                      {result?.status === "leak" && (
-                        <span
-                          className="tag-leak"
-                          title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
-                        >
-                          ⚠ Exposure ({result.findings.length})
-                        </span>
-                      )}
+                      {result?.status === "leak" && (() => {
+                        const rescued = result.findings.find((f) => f.rescueTxHash);
+                        return rescued ? (
+                          <a
+                            href={`https://sepolia.voyager.online/tx/${rescued.rescueTxHash}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="tag-clean"
+                            title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
+                          >
+                            ✓ Rescued
+                          </a>
+                        ) : (
+                          <span
+                            className="tag-leak"
+                            title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
+                          >
+                            ⚠ Exposure ({result.findings.length})
+                          </span>
+                        );
+                      })()}
                     </td>
                   </tr>
                 );

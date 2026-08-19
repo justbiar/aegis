@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchRegistry } from "@/lib/registry";
 import { scanRepo, type ScanResult } from "@/lib/scan";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const CONCURRENCY = 8;
 

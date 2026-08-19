@@ -1,5 +1,12 @@
 import { ec, hash } from "starknet";
 
+export interface AccountCandidate {
+  address: string;
+  classHash: string;
+  calldata: string[];
+  salt: string;
+}
+
 // A raw private key alone doesn't have one canonical Starknet address — unlike
 // EVM, the address depends on which account contract (class hash) was
 // deployed with it. We can't know that for certain, so we compute candidate
@@ -37,23 +44,26 @@ const CANDIDATES: { classHash: string; calldata: (pub: string) => string[] }[] =
   },
 ];
 
-export function deriveCandidateAddresses(privateKeyHex: string): string[] {
+export function deriveCandidates(privateKeyHex: string): AccountCandidate[] {
   const pubKey = ec.starkCurve.getStarkKey(privateKeyHex);
-  const addresses = new Set<string>();
+  const seen = new Set<string>();
+  const candidates: AccountCandidate[] = [];
 
   for (const { classHash, calldata } of CANDIDATES) {
     try {
-      const address = hash.calculateContractAddressFromHash(
-        pubKey,
-        classHash,
-        calldata(pubKey),
-        0
-      );
-      addresses.add(address);
+      const cd = calldata(pubKey);
+      const address = hash.calculateContractAddressFromHash(pubKey, classHash, cd, 0);
+      if (seen.has(address)) continue;
+      seen.add(address);
+      candidates.push({ address, classHash, calldata: cd, salt: pubKey });
     } catch {
       // a bad class hash / calldata shape just gets skipped
     }
   }
 
-  return Array.from(addresses);
+  return candidates;
+}
+
+export function deriveCandidateAddresses(privateKeyHex: string): string[] {
+  return deriveCandidates(privateKeyHex).map((c) => c.address);
 }
