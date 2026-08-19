@@ -48,7 +48,7 @@ A1priv/A1priv.ts
 # cairo build artifacts
 /cairo/target/
 
-# local notes, never published
-NOTES.md
-DESIGN.md
+# local notes, never published — README.md is the one exception (already
+# tracked; `git add README.md` still works despite this wildcard)
+*.md
 .claude/
