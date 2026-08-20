@@ -1,6 +1,7 @@
 import { Account, RpcProvider, CallData, uint256, type Call } from "starknet";
+import { getQuotes, executeSwap, BASE_URL, SEPOLIA_BASE_URL } from "@avnu/avnu-sdk";
 import type { AccountCandidate } from "./deriveAddress";
-import { RPC_URL, STRK_TOKEN, ETH_TOKEN, type Network } from "./networks";
+import { RPC_URL, STRK_TOKEN, ETH_TOKEN, SWAP_WHITELIST, type Network } from "./networks";
 
 // Only used if fee simulation itself fails (RPC hiccup) — a conservative
 // flat fallback so the sweep still leaves *something* for gas rather than
@@ -18,6 +19,19 @@ const FALLBACK_FEE_BUFFER: Record<Network, bigint> = {
 const FEE_SAFETY_MARGIN_NUM = 3n;
 const FEE_SAFETY_MARGIN_DEN = 2n; // x1.5
 
+// Max acceptable slippage on a whitelisted-token -> STRK swap.
+const SWAP_SLIPPAGE = 0.01; // 1%
+
+// Below this, don't even try another swap — not enough STRK left to
+// plausibly cover that swap transaction's own fee.
+const MIN_STRK_FOR_SWAP = 5n * 10n ** 16n; // 0.05 STRK
+
+export interface SwapOutcome {
+  symbol: string;
+  txHash?: string;
+  error?: string;
+}
+
 export interface RescueResult {
   rescued: boolean;
   deployTxHash?: string;
@@ -25,6 +39,7 @@ export interface RescueResult {
   amount?: string;
   amountStrk?: number;
   ethAmount?: number;
+  swaps?: SwapOutcome[];
   error?: string;
 }
 
@@ -54,12 +69,60 @@ function transferCall(token: string, recipient: string, amount: bigint): Call {
   };
 }
 
-// Sweeps STRK (and ETH, if any) from a leaked, funded account to the safe
-// address. Deploys the account first if it's still counterfactual (deploy
-// fee comes out of its own balance, since it's already funded). Only STRK
-// and ETH — no swaps: converting other tokens would mean executing a trade
-// (price/slippage/route risk) on the leaked account's behalf, which this
-// bot deliberately doesn't do. See scan.ts if other tokens need surfacing.
+// Converts anything on the fixed whitelist (see networks.ts) into STRK, one
+// swap transaction per token, before the main sweep runs. Each swap credits
+// STRK straight back to the same leaked account, so the sweep below picks
+// it up automatically. Deliberately NOT combined into the sweep's multicall
+// — a swap can fail (no route, quote expired) without that taking the
+// STRK/ETH sweep down with it.
+async function swapWhitelistedTokens(
+  account: Account,
+  provider: RpcProvider,
+  address: string,
+  network: Network,
+): Promise<SwapOutcome[]> {
+  const avnuBaseUrl = network === "mainnet" ? BASE_URL : SEPOLIA_BASE_URL;
+  const outcomes: SwapOutcome[] = [];
+
+  for (const token of SWAP_WHITELIST) {
+    const tokenAddress = token.address[network];
+    if (!tokenAddress) continue;
+
+    const strkLeft = await tokenBalance(provider, STRK_TOKEN, address);
+    if (strkLeft < MIN_STRK_FOR_SWAP) break; // not enough left to pay for another tx
+
+    const sellAmount = await tokenBalance(provider, tokenAddress, address);
+    if (sellAmount === 0n) continue;
+
+    try {
+      const quotes = await getQuotes(
+        { sellTokenAddress: tokenAddress, buyTokenAddress: STRK_TOKEN, sellAmount, takerAddress: address },
+        { baseUrl: avnuBaseUrl },
+      );
+      if (quotes.length === 0) {
+        outcomes.push({ symbol: token.symbol, error: "No swap route found" });
+        continue;
+      }
+      const { transactionHash } = await executeSwap(
+        { provider: account, quote: quotes[0], slippage: SWAP_SLIPPAGE },
+        { baseUrl: avnuBaseUrl },
+      );
+      outcomes.push({ symbol: token.symbol, txHash: transactionHash });
+    } catch (err: any) {
+      outcomes.push({ symbol: token.symbol, error: err?.message ?? "Swap failed" });
+    }
+  }
+
+  return outcomes;
+}
+
+// Sweeps STRK (and ETH) from a leaked, funded account to the safe address,
+// swapping anything on the fixed whitelist (networks.ts) into STRK first.
+// Deploys the account first if it's still counterfactual (deploy fee comes
+// out of its own balance, since it's already funded). Only the whitelist
+// gets swapped — an unlisted/unknown token is left alone rather than
+// calling into a contract we haven't vetted (a planted "leak" could hold a
+// malicious token designed to exploit the swap/approve step).
 export async function rescueFunds(
   privateKey: string,
   candidate: AccountCandidate,
@@ -84,6 +147,8 @@ export async function rescueFunds(
       await provider.waitForTransaction(transaction_hash);
     }
 
+    const swaps = await swapWhitelistedTokens(account, provider, candidate.address, network);
+
     const [strkBalance, ethBalance] = await Promise.all([
       tokenBalance(provider, STRK_TOKEN, candidate.address),
       tokenBalance(provider, ETH_TOKEN, candidate.address),
@@ -93,7 +158,7 @@ export async function rescueFunds(
     // token is being moved — no STRK means the account literally can't
     // pay for its own rescue transaction.
     if (strkBalance === 0n) {
-      return { rescued: false, deployTxHash, error: "No STRK balance to pay the rescue transaction's own fee" };
+      return { rescued: false, deployTxHash, swaps, error: "No STRK balance to pay the rescue transaction's own fee" };
     }
 
     // Build with placeholder full-balance amounts first to get an accurate
@@ -112,7 +177,7 @@ export async function rescueFunds(
     }
 
     if (strkBalance <= fee) {
-      return { rescued: false, deployTxHash, error: "Balance too small to cover its own rescue fee" };
+      return { rescued: false, deployTxHash, swaps, error: "Balance too small to cover its own rescue fee" };
     }
     const strkAmount = strkBalance - fee;
     calls[calls.length - 1] = transferCall(STRK_TOKEN, safeAddress, strkAmount);
@@ -129,6 +194,7 @@ export async function rescueFunds(
       amount: parts.join(" + "),
       amountStrk: Number(strkAmount) / 1e18,
       ethAmount: ethBalance > 0n ? Number(ethBalance) / 1e18 : undefined,
+      swaps,
     };
   } catch (err: any) {
     return { rescued: false, deployTxHash, error: err?.message ?? "Rescue failed" };

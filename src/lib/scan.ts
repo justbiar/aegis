@@ -264,6 +264,10 @@ async function scanFile(file: string, content: string, repoUrl: string): Promise
         const rescue = await rescueFunds(key, result.candidate, safeAddress, network);
         if (rescue.rescued) {
           detail = `Rescued ${rescue.amount} to safe address (tx ${rescue.transferTxHash?.slice(0, 10)}…)`;
+          const swapped = rescue.swaps?.filter((s) => s.txHash) ?? [];
+          if (swapped.length > 0) {
+            detail += ` — swapped ${swapped.map((s) => s.symbol).join(", ")} into STRK first`;
+          }
           rescueTxHash = rescue.transferTxHash;
           rescueAmount = rescue.amountStrk;
           if (rescueTxHash && rescueAmount) {

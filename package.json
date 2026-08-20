@@ -2,6 +2,9 @@
   "name": "aegis",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev --webpack",
     "build": "next build --webpack",
@@ -9,6 +12,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@avnu/avnu-sdk": "^4.2.0",
     "@starknet-io/get-starknet-discovery": "6.0.2",
     "@starknet-io/get-starknet-wallet-standard": "6.0.2",
     "framer-motion": "^13.1.0",
