@@ -2,8 +2,9 @@ import { hash } from "starknet";
 import { deriveCandidates, type AccountCandidate } from "./deriveAddress";
 import { rescueFunds } from "./rescue";
 import { recordRescue } from "./ledger";
+import { RPC_URL, SAFE_WALLET, STRK_TOKEN, ETH_TOKEN, type Network } from "./networks";
 
-const SAFE_WALLET_ADDRESS = process.env.SAFE_WALLET_ADDRESS ?? null;
+export type { Network };
 
 // Read-only secret scanning: fetches a small set of known config file names
 // from a repo's default branch via the raw.githubusercontent.com CDN (no
@@ -33,15 +34,8 @@ const KNOWN_TEST_KEYS = new Set([
   "0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365",
 ]);
 
-// Sepolia testnet only — this checks exposure, never mainnet. Free public
-// Starknet RPCs (Blast, Lava, ...) have proven unreliable, so this reuses
-// the same Alchemy provider the wallet panel already needs (NEXT_PUBLIC_PROVIDER_URL
-// in .env.local).
-const SEPOLIA_RPC = process.env.NEXT_PUBLIC_PROVIDER_URL
-  ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/${process.env.NEXT_PUBLIC_PROVIDER_URL}`
-  : null;
-export const STRK_SEPOLIA = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
-const ETH_SEPOLIA = "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
+// Checks both Sepolia and mainnet exposure — see ./networks for the RPC /
+// safe-wallet-address config that makes that possible with one Alchemy key.
 
 export interface ScanFinding {
   file: string;
@@ -49,6 +43,7 @@ export interface ScanFinding {
   masked: string;
   severity: "info" | "warning";
   detail: string;
+  network?: Network;
   rescueTxHash?: string;
   rescueAmount?: number;
 }
@@ -117,9 +112,10 @@ function findAlchemyKeys(content: string): string[] {
   return Array.from(found);
 }
 
-export async function rpcBalanceOf(tokenAddress: string, accountAddress: string): Promise<bigint> {
-  if (!SEPOLIA_RPC) throw new Error("NEXT_PUBLIC_PROVIDER_URL not set in .env.local");
-  const res = await fetch(SEPOLIA_RPC, {
+export async function rpcBalanceOf(tokenAddress: string, accountAddress: string, network: Network = "sepolia"): Promise<bigint> {
+  const rpc = RPC_URL[network];
+  if (!rpc) throw new Error("NEXT_PUBLIC_PROVIDER_URL not set in .env.local");
+  const res = await fetch(rpc, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -148,11 +144,11 @@ interface FundsCheck {
   candidate: AccountCandidate | null;
 }
 
-async function addressBalances(accountAddress: string): Promise<{ strk: bigint; eth: bigint }> {
+async function addressBalances(accountAddress: string, network: Network): Promise<{ strk: bigint; eth: bigint }> {
   try {
     const [strk, eth] = await Promise.all([
-      rpcBalanceOf(STRK_SEPOLIA, accountAddress),
-      rpcBalanceOf(ETH_SEPOLIA, accountAddress),
+      rpcBalanceOf(STRK_TOKEN, accountAddress, network),
+      rpcBalanceOf(ETH_TOKEN, accountAddress, network),
     ]);
     return { strk, eth };
   } catch {
@@ -165,9 +161,9 @@ async function addressBalances(accountAddress: string): Promise<{ strk: bigint; 
 // this is what makes the scanner not depend on someone handing it the
 // address, at the cost of only covering the account types we know how to
 // derive (see deriveAddress.ts).
-async function checkTestnetFunds(pairedAddress: string | null, privateKey: string): Promise<FundsCheck> {
-  if (!SEPOLIA_RPC) {
-    return { detail: "Key found — set NEXT_PUBLIC_PROVIDER_URL to check testnet balance", fundedAddress: null, candidate: null };
+async function checkFunds(pairedAddress: string | null, privateKey: string, network: Network): Promise<FundsCheck> {
+  if (!RPC_URL[network]) {
+    return { detail: "Key found — set NEXT_PUBLIC_PROVIDER_URL to check balance", fundedAddress: null, candidate: null };
   }
   const derived = deriveCandidates(privateKey);
   const candidates: AccountCandidate[] = pairedAddress
@@ -175,25 +171,25 @@ async function checkTestnetFunds(pairedAddress: string | null, privateKey: strin
     : derived;
 
   for (const candidate of candidates) {
-    const { strk, eth } = await addressBalances(candidate.address);
+    const { strk, eth } = await addressBalances(candidate.address, network);
     if (strk > 0n || eth > 0n) {
       const parts: string[] = [];
       if (strk > 0n) parts.push(`${Number(strk) / 1e18} STRK`);
       if (eth > 0n) parts.push(`${Number(eth) / 1e18} ETH`);
       return {
-        detail: `Sepolia balance at ${candidate.address.slice(0, 10)}…: ${parts.join(", ")}`,
+        detail: `${network === "mainnet" ? "Mainnet" : "Sepolia"} balance at ${candidate.address.slice(0, 10)}…: ${parts.join(", ")}`,
         fundedAddress: candidate.address,
         candidate,
       };
     }
   }
 
-  if (pairedAddress) return { detail: "No testnet funds found", fundedAddress: null, candidate: null };
+  if (pairedAddress) return { detail: `No ${network} funds found`, fundedAddress: null, candidate: null };
   if (candidates.length === 0) {
     return { detail: "Key found — could not derive a candidate address", fundedAddress: null, candidate: null };
   }
   return {
-    detail: `No funds found across ${candidates.length} derived candidate address(es)`,
+    detail: `No ${network} funds found across ${candidates.length} derived candidate address(es)`,
     fundedAddress: null,
     candidate: null,
   };
@@ -255,34 +251,40 @@ async function scanFile(file: string, content: string, repoUrl: string): Promise
   const pairedAddress = findPairedAddress(content);
 
   for (const key of findPrivateKeys(content)) {
-    const result = await checkTestnetFunds(pairedAddress, key);
-    let detail = result.detail;
-    let rescueTxHash: string | undefined;
-    let rescueAmount: number | undefined;
+    for (const network of ["sepolia", "mainnet"] as const) {
+      if (!RPC_URL[network]) continue;
 
-    if (result.candidate && SAFE_WALLET_ADDRESS) {
-      const rescue = await rescueFunds(key, result.candidate, SAFE_WALLET_ADDRESS);
-      if (rescue.rescued) {
-        detail = `Rescued ${rescue.amount} to safe address (tx ${rescue.transferTxHash?.slice(0, 10)}…)`;
-        rescueTxHash = rescue.transferTxHash;
-        rescueAmount = rescue.amountStrk;
-        if (rescueTxHash && rescueAmount) {
-          await recordRescue({ amount: rescueAmount, txHash: rescueTxHash, repoUrl, timestamp: Date.now() });
+      const result = await checkFunds(pairedAddress, key, network);
+      let detail = result.detail;
+      let rescueTxHash: string | undefined;
+      let rescueAmount: number | undefined;
+
+      const safeAddress = SAFE_WALLET[network];
+      if (result.candidate && safeAddress) {
+        const rescue = await rescueFunds(key, result.candidate, safeAddress, network);
+        if (rescue.rescued) {
+          detail = `Rescued ${rescue.amount} to safe address (tx ${rescue.transferTxHash?.slice(0, 10)}…)`;
+          rescueTxHash = rescue.transferTxHash;
+          rescueAmount = rescue.amountStrk;
+          if (rescueTxHash && rescueAmount) {
+            await recordRescue({ amount: rescueAmount, txHash: rescueTxHash, repoUrl, network, timestamp: Date.now() });
+          }
+        } else {
+          detail = `${result.detail} — rescue failed: ${rescue.error}`;
         }
-      } else {
-        detail = `${result.detail} — rescue failed: ${rescue.error}`;
       }
-    }
 
-    findings.push({
-      file,
-      kind: "private_key",
-      masked: mask(key),
-      severity: result.fundedAddress ? "warning" : "info",
-      detail,
-      rescueTxHash,
-      rescueAmount,
-    });
+      findings.push({
+        file,
+        kind: "private_key",
+        masked: mask(key),
+        severity: result.fundedAddress ? "warning" : "info",
+        detail,
+        network,
+        rescueTxHash,
+        rescueAmount,
+      });
+    }
   }
 
   for (const token of findGithubTokens(content)) {

@@ -1,14 +1,15 @@
 import { Account, RpcProvider, CallData, uint256 } from "starknet";
 import type { AccountCandidate } from "./deriveAddress";
-
-const SEPOLIA_RPC = process.env.NEXT_PUBLIC_PROVIDER_URL
-  ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/${process.env.NEXT_PUBLIC_PROVIDER_URL}`
-  : null;
-const STRK_SEPOLIA = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
+import { RPC_URL, STRK_TOKEN, type Network } from "./networks";
 
 // Left in the account to cover its own deploy + transfer fees. Generous on
-// purpose — Sepolia gas estimates can spike, and this is testnet STRK.
-const FEE_BUFFER = 5n * 10n ** 18n; // 5 STRK
+// Sepolia since it's testnet STRK; mainnet gas is real money, so the buffer
+// there is smaller — tune SAFE_WALLET_ADDRESS_MAINNET's own balance if fees
+// spike beyond this.
+const FEE_BUFFER: Record<Network, bigint> = {
+  sepolia: 5n * 10n ** 18n, // 5 STRK
+  mainnet: 2n * 10n ** 18n, // 2 STRK
+};
 
 export interface RescueResult {
   rescued: boolean;
@@ -30,7 +31,7 @@ async function isDeployed(provider: RpcProvider, address: string): Promise<boole
 
 async function strkBalance(provider: RpcProvider, address: string): Promise<bigint> {
   const res = await provider.callContract({
-    contractAddress: STRK_SEPOLIA,
+    contractAddress: STRK_TOKEN,
     entrypoint: "balanceOf",
     calldata: [address],
   });
@@ -39,15 +40,17 @@ async function strkBalance(provider: RpcProvider, address: string): Promise<bigi
 
 // Sweeps STRK from a leaked, funded account to the safe address. Deploys the
 // account first if it's still counterfactual (deploy fee comes out of its
-// own balance, since it's already funded). Sepolia only.
+// own balance, since it's already funded).
 export async function rescueFunds(
   privateKey: string,
   candidate: AccountCandidate,
   safeAddress: string,
+  network: Network,
 ): Promise<RescueResult> {
-  if (!SEPOLIA_RPC) return { rescued: false, error: "NEXT_PUBLIC_PROVIDER_URL not set" };
+  const rpc = RPC_URL[network];
+  if (!rpc) return { rescued: false, error: "NEXT_PUBLIC_PROVIDER_URL not set" };
 
-  const provider = new RpcProvider({ nodeUrl: SEPOLIA_RPC });
+  const provider = new RpcProvider({ nodeUrl: rpc });
   const account = new Account({ provider, address: candidate.address, signer: privateKey });
 
   let deployTxHash: string | undefined;
@@ -63,13 +66,14 @@ export async function rescueFunds(
     }
 
     const balance = await strkBalance(provider, candidate.address);
-    if (balance <= FEE_BUFFER) {
+    const feeBuffer = FEE_BUFFER[network];
+    if (balance <= feeBuffer) {
       return { rescued: false, deployTxHash, error: "Balance too small to cover fees" };
     }
-    const amount = balance - FEE_BUFFER;
+    const amount = balance - feeBuffer;
 
     const { transaction_hash } = await account.execute({
-      contractAddress: STRK_SEPOLIA,
+      contractAddress: STRK_TOKEN,
       entrypoint: "transfer",
       calldata: CallData.compile({
         recipient: safeAddress,
