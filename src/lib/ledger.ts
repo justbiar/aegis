@@ -38,6 +38,24 @@ const SEEDED_RECORDS: RescueRecord[] = [
     network: "sepolia",
     timestamp: 1787162397000,
   },
+  // Two more real rescues happened before KV was ever connected — same
+  // test-leak.env key, this time funded on mainnet. Found by replaying
+  // Transfer events into SAFE_WALLET_ADDRESS_MAINNET from its derived
+  // account address, verified against the actual txs.
+  {
+    amount: 2.9503633126439546,
+    txHash: "0x13fc35b018ddc48f86f40f5966330e03fe2e2a235bf795e61c83004afe083fd",
+    repoUrl: "https://github.com/justbiar/aegis",
+    network: "mainnet",
+    timestamp: 1787245634000,
+  },
+  {
+    amount: 1.7131658426257736,
+    txHash: "0x4607b8bbc7bf6ef58a0fbde6d0a065143530aa9c267f4042d5188382d99698d",
+    repoUrl: "https://github.com/justbiar/aegis",
+    network: "mainnet",
+    timestamp: 1787246361000,
+  },
 ];
 
 export async function recordRescue(record: RescueRecord): Promise<void> {
