@@ -32,24 +32,42 @@ const STEPS = [
 export default function Page() {
   const [rescuedCount, setRescuedCount] = useState(0);
   const [rescuedTotal, setRescuedTotal] = useState(0);
+  const [rescuedCountMainnet, setRescuedCountMainnet] = useState(0);
+  const [rescuedTotalMainnet, setRescuedTotalMainnet] = useState(0);
 
   const handleScanResults = (results: ScanResult[]) => {
     let count = 0;
     let total = 0;
+    let countMainnet = 0;
+    let totalMainnet = 0;
     for (const r of results) {
       const rescued = r.findings.filter((f) => f.rescueTxHash);
-      if (rescued.length > 0) count += rescued.length;
-      for (const f of rescued) total += f.rescueAmount ?? 0;
+      for (const f of rescued) {
+        if (f.network === "mainnet") {
+          countMainnet++;
+          totalMainnet += f.rescueAmount ?? 0;
+        } else {
+          count++;
+          total += f.rescueAmount ?? 0;
+        }
+      }
     }
     setRescuedCount(count);
     setRescuedTotal(total);
+    setRescuedCountMainnet(countMainnet);
+    setRescuedTotalMainnet(totalMainnet);
   };
 
   return (
     <div className="min-h-screen bg-white dark:bg-ls-black">
       <Navbar />
       <div className="pt-16">
-        <VaultBanner rescuedCount={rescuedCount} rescuedTotal={rescuedTotal} />
+        <VaultBanner
+          rescuedCount={rescuedCount}
+          rescuedTotal={rescuedTotal}
+          rescuedCountMainnet={rescuedCountMainnet}
+          rescuedTotalMainnet={rescuedTotalMainnet}
+        />
       </div>
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
