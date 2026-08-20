@@ -23,6 +23,10 @@ export interface ClaimRecord {
   requestedAt: number;
   paidTxHash?: string;
   paidAt?: number;
+  // true = private in-pool transfer (the "Pay claims" tab); false/undefined
+  // = the automatic plain payout in payout.ts. Both leave the recipient
+  // with the same STRK, just with different on-chain visibility.
+  paidPrivately?: boolean;
 }
 
 export const claimsAvailable = Boolean(KV_URL && KV_TOKEN);
@@ -72,6 +76,7 @@ export async function markClaimPaid(
   repoUrl: string,
   network: Network,
   paidTxHash: string,
+  paidPrivately: boolean,
 ): Promise<boolean> {
   const claims = await getClaims();
   const claim = claims.find(
@@ -81,6 +86,7 @@ export async function markClaimPaid(
   claim.status = "paid";
   claim.paidTxHash = paidTxHash;
   claim.paidAt = Date.now();
+  claim.paidPrivately = paidPrivately;
   await saveClaims(claims);
   return true;
 }

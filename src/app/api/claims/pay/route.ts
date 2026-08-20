@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Could not look up transaction: ${err?.message ?? "unknown error"}` }, { status: 400 });
   }
 
-  const marked = await markClaimPaid(repoUrl, network, txHash);
+  const marked = await markClaimPaid(repoUrl, network, txHash, true);
   if (!marked) {
     return NextResponse.json({ error: "No matching pending claim found" }, { status: 404 });
   }

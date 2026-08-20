@@ -16,6 +16,7 @@ interface Claim {
   amount: number;
   status: "pending" | "paid";
   paidTxHash?: string;
+  paidPrivately?: boolean;
 }
 
 export function ClaimPanel() {
@@ -61,6 +62,7 @@ export function ClaimPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit claim");
+      if (data.warning) setError((e) => ({ ...e, [key]: data.warning }));
       load();
     } catch (e: any) {
       setError((err) => ({ ...err, [key]: e.message ?? "Failed to submit claim" }));
@@ -96,7 +98,7 @@ export function ClaimPanel() {
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
-                  placeholder="Your Starknet address (pool-registered, to receive a private transfer)"
+                  placeholder="Your Starknet address (paid out immediately on submit)"
                   value={addresses[key] ?? ""}
                   onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
                   className="flex-1 px-3 py-2 text-sm rounded-lg border border-ls-gray-300 dark:border-ls-gray-700
@@ -132,7 +134,7 @@ export function ClaimPanel() {
                 rel="noreferrer"
                 className="tag-clean flex items-center gap-1"
               >
-                Paid privately <ExternalLink size={11} />
+                {c.paidPrivately ? "Paid privately" : "Paid"} <ExternalLink size={11} />
               </a>
             ) : (
               <span className="tag-pending">Pending payout</span>

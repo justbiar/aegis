@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getLedger } from "@/lib/ledger";
 import { getClaims, recordClaimRequest, type ClaimRecord } from "@/lib/claims";
+import { payoutClaim } from "@/lib/payout";
 import type { Network } from "@/lib/networks";
 
 function repoOwner(repoUrl: string): string | null {
@@ -53,9 +54,11 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ claimable, claims: myClaims });
 }
 
-// POST { repoUrl, network, starknetAddress } — register the address that
-// should receive a rescue payout. Requires the signed-in GitHub login to
-// match the repo's owner segment, and a real rescue to exist for it.
+// POST { repoUrl, network, starknetAddress } — pays a verified owner out
+// immediately (plain transfer, see payout.ts) so they're not stuck waiting
+// on someone to trigger a private send. Falls back to a pending claim (for
+// the manual/private "Pay claims" tab) only if the automatic payout itself
+// fails, e.g. SAFE_WALLET_PRIVATE_KEY not set yet.
 export async function POST(req: NextRequest) {
   const session = await auth();
   const login = (session?.user as any)?.login as string | undefined;
@@ -87,15 +90,21 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Already claimed" }, { status: 409 });
   }
 
+  const payout = await payoutClaim(network, starknetAddress, amount);
+
   const claim: ClaimRecord = {
     repoUrl,
     githubLogin: login,
     starknetAddress,
     amount,
     network,
-    status: "pending",
+    status: payout.paid ? "paid" : "pending",
     requestedAt: Date.now(),
+    ...(payout.paid ? { paidTxHash: payout.txHash, paidAt: Date.now(), paidPrivately: false } : {}),
   };
   await recordClaimRequest(claim);
-  return NextResponse.json({ claim });
+  return NextResponse.json({
+    claim,
+    warning: payout.paid ? undefined : `Automatic payout failed (${payout.error}) — recorded as pending for manual payout instead.`,
+  });
 }
