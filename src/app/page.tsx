@@ -6,6 +6,7 @@ import { ShieldCheck, ScanSearch, Lock, KeyRound, ExternalLink } from "lucide-re
 import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
 import { VaultBanner } from "./components/VaultBanner";
+import { ClaimPanel } from "./components/ClaimPanel";
 import type { ScanResult } from "@/lib/scan";
 
 const STEPS = [
@@ -202,6 +203,8 @@ export default function Page() {
           <RegistryTable onResults={handleScanResults} />
         </div>
       </section>
+
+      <ClaimPanel />
 
       {/* ── FOOTER ──────────────────────────────────────────────────────── */}
       <footer className="bg-black dark:bg-ls-gray-950 border-t border-ls-gray-900">
