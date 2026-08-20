@@ -1,26 +1,37 @@
 import { NextResponse } from "next/server";
-import { rpcBalanceOf, STRK_SEPOLIA } from "@/lib/scan";
+import { rpcBalanceOf } from "@/lib/scan";
+import { SAFE_WALLET, RPC_URL, STRK_TOKEN, type Network } from "@/lib/networks";
 import { getLedger, ledgerAvailable } from "@/lib/ledger";
 
-const SAFE_WALLET_ADDRESS = process.env.SAFE_WALLET_ADDRESS ?? null;
+interface NetworkVaultInfo {
+  address: string | null;
+  balance: number | null;
+  rescuedTotal: number;
+  rescuedCount: number;
+}
 
-export async function GET() {
-  if (!SAFE_WALLET_ADDRESS) {
-    return NextResponse.json({ error: "SAFE_WALLET_ADDRESS not set" }, { status: 500 });
+async function vaultInfo(network: Network, ledger: Awaited<ReturnType<typeof getLedger>>): Promise<NetworkVaultInfo> {
+  const address = SAFE_WALLET[network];
+  const records = ledger.filter((r) => r.network === network);
+  const rescuedTotal = records.reduce((sum, r) => sum + r.amount, 0);
+  const rescuedCount = records.length;
+
+  if (!address || !RPC_URL[network]) {
+    return { address, balance: null, rescuedTotal, rescuedCount };
   }
   try {
-    const [balance, ledger] = await Promise.all([
-      rpcBalanceOf(STRK_SEPOLIA, SAFE_WALLET_ADDRESS),
-      getLedger(),
-    ]);
-    return NextResponse.json({
-      address: SAFE_WALLET_ADDRESS,
-      balance: Number(balance) / 1e18,
-      ledgerAvailable,
-      rescuedTotal: ledger.reduce((sum, r) => sum + r.amount, 0),
-      rescuedCount: ledger.length,
-    });
-  } catch (err: any) {
-    return NextResponse.json({ error: err?.message ?? "Failed to read vault balance" }, { status: 502 });
+    const balance = await rpcBalanceOf(STRK_TOKEN, address, network);
+    return { address, balance: Number(balance) / 1e18, rescuedTotal, rescuedCount };
+  } catch {
+    return { address, balance: null, rescuedTotal, rescuedCount };
   }
+}
+
+export async function GET() {
+  const ledger = await getLedger();
+  const [mainnet, sepolia] = await Promise.all([
+    vaultInfo("mainnet", ledger),
+    vaultInfo("sepolia", ledger),
+  ]);
+  return NextResponse.json({ mainnet, sepolia, ledgerAvailable });
 }

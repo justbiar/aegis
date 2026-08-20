@@ -10,6 +10,8 @@
 // Backed by Vercel KV (Upstash Redis REST API) when configured. Silently
 // becomes a no-op without it — a missing ledger must never block a rescue.
 
+import type { Network } from "./networks";
+
 const KV_URL = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 const LEDGER_KEY = "aegis:rescues";
@@ -18,6 +20,7 @@ export interface RescueRecord {
   amount: number;
   txHash: string;
   repoUrl: string;
+  network: Network;
   timestamp: number;
 }
 
@@ -32,6 +35,7 @@ const SEEDED_RECORDS: RescueRecord[] = [
     amount: 84.87346099247694,
     txHash: "0x672742d0cf63167ba4f87017d6e2852a403ddcc060ff8d297988e9ccc5e6e1d",
     repoUrl: "https://github.com/justbiar/aegis",
+    network: "sepolia",
     timestamp: 1787162397000,
   },
 ];
@@ -55,7 +59,15 @@ export async function getLedger(): Promise<RescueRecord[]> {
     });
     const data = await res.json();
     const raw: string[] = data.result ?? [];
-    return [...SEEDED_RECORDS, ...raw.map((s) => JSON.parse(s) as RescueRecord)];
+    // Records written before network-splitting existed have no `network`
+    // field — they all predate mainnet support, so they were Sepolia.
+    return [
+      ...SEEDED_RECORDS,
+      ...raw.map((s) => {
+        const record = JSON.parse(s) as RescueRecord;
+        return record.network ? record : { ...record, network: "sepolia" as const };
+      }),
+    ];
   } catch {
     return SEEDED_RECORDS;
   }
