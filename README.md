@@ -9,6 +9,7 @@ before an attacker gets there first.
 
 [![Live Demo](https://img.shields.io/badge/demo-live-brightgreen?style=for-the-badge)](https://aegis-peach-six.vercel.app/)
 [![STRK20 Private Sprint](https://img.shields.io/badge/STRK20-Private%20Sprint-ff6b35?style=flat-square)](https://strk20.starknet.io/hackathon)
+[![Starknet Mainnet](https://img.shields.io/badge/Starknet-Mainnet-29296E?style=flat-square)](https://voyager.online/)
 [![Starknet Sepolia](https://img.shields.io/badge/Starknet-Sepolia-29296E?style=flat-square)](https://sepolia.voyager.online/)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js&logoColor=white)](https://nextjs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-black?style=flat-square)](LICENSE)
@@ -63,9 +64,9 @@ private transfer, not a public, front-runnable one.
 - ✅ Live registry scan across every hackathon-registered repo
 - ✅ Verified detection (real balance checks, real credential liveness checks — not just regex)
 - ✅ Private-key → funded-account derivation with zero manual input
-- ✅ Automatic sweep to a safe address, tested end-to-end on Sepolia with real funds
+- ✅ Automatic sweep to a safe address, tested end-to-end on **both Sepolia and mainnet** with real funds — mainnet example: [`0x13fc35b0…afe083fd`](https://voyager.online/tx/0x13fc35b018ddc48f86f40f5966330e03fe2e2a235bf795e61c83004afe083fd), [`0x4607b8bb…d99698d`](https://voyager.online/tx/0x4607b8bbc7bf6ef58a0fbde6d0a065143530aa9c267f4042d5188382d99698d)
 - 🚧 GitHub-verified claim/payout flow
-- 🚧 Routing rescued funds through the STRK20 shielded pool (currently a plain transfer)
+- 🚧 Routing rescued funds through the STRK20 shielded pool (currently a plain transfer — the mainnet transactions above move real funds correctly, but not through the pool yet)
 
 ## Stack
 
