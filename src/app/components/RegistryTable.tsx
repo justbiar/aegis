@@ -143,9 +143,12 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
                       )}
                       {result?.status === "leak" && (() => {
                         const rescued = result.findings.find((f) => f.rescueTxHash);
+                        const explorer = rescued?.network === "mainnet"
+                          ? "https://voyager.online/tx/"
+                          : "https://sepolia.voyager.online/tx/";
                         return rescued ? (
                           <a
-                            href={`https://sepolia.voyager.online/tx/${rescued.rescueTxHash}`}
+                            href={`${explorer}${rescued.rescueTxHash}`}
                             target="_blank"
                             rel="noreferrer"
                             className="tag-clean"
