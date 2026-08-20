@@ -132,14 +132,26 @@ function errorResult(msg: string): ActionResult {
 }
 
 // Tabs - one STRK20 action each (Umbra-style single-action interface).
-type TabKey = "shield" | "send" | "unshield" | "echo" | "balances";
+// "pay" is the odd one out: it's not one fixed action, it's a list of
+// pending claims (see PendingClaim below), each with its own recipient and
+// amount, so it gets its own render block instead of the generic CTA.
+type TabKey = "shield" | "send" | "unshield" | "echo" | "balances" | "pay";
 const TABS: { key: TabKey; label: string }[] = [
   { key: "shield", label: "Shield" },
   { key: "send", label: "Send" },
   { key: "unshield", label: "Unshield" },
   { key: "echo", label: "Echo" },
   { key: "balances", label: "Balances" },
+  { key: "pay", label: "Pay claims" },
 ];
+
+interface PendingClaim {
+  repoUrl: string;
+  githubLogin: string;
+  starknetAddress: string;
+  amount: number;
+  network: "mainnet" | "sepolia";
+}
 
 export default function WalletAccountV6Tag() {
   const myFrontendProviderIndex = useFrontendProvider(
@@ -177,6 +189,24 @@ export default function WalletAccountV6Tag() {
   const [deploying, setDeploying] = useState<boolean>(false);
   // Active action tab (Umbra-style single-action interface).
   const [tab, setTab] = useState<TabKey>("shield");
+
+  // Pending claims to pay out (see /api/claims) - a private, per-claim
+  // STRK20 "transfer" action, not the fixed one-button pattern the other
+  // tabs use.
+  const [pendingClaims, setPendingClaims] = useState<PendingClaim[]>([]);
+  const [payingKey, setPayingKey] = useState<string | null>(null);
+  const [payResults, setPayResults] = useState<Record<string, ActionResult>>({});
+
+  const loadPendingClaims = () => {
+    fetch("/api/claims?scope=pending")
+      .then((r) => r.json())
+      .then((d) => setPendingClaims(d.claims ?? []))
+      .catch(() => {});
+  };
+
+  useEffect(() => {
+    if (tab === "pay") loadPendingClaims();
+  }, [tab]);
 
   const getWAchainId = () => {
     myWalletAccount?.provider
@@ -327,6 +357,46 @@ export default function WalletAccountV6Tag() {
       { type: "transfer", token: TOKEN, amount: num.toHex(ONE_STRK), recipient: connectedAddress },
     ];
     await submit(actions, setResultTransfer, "1 STRK");
+  };
+
+  // Pays out one pending claim as a private in-pool transfer - same STRK20
+  // "transfer" action as handleSelfTransfer, just with the claim's own
+  // recipient/amount instead of self/1 STRK. Only produces a real payout if
+  // the connected wallet is the actual safe wallet (whoever holds that key
+  // is the only one who can sign it) - this UI has no separate gate beyond
+  // that, matching how every other tab here works.
+  const handlePayClaim = async (claim: PendingClaim) => {
+    const key = `${claim.repoUrl}::${claim.network}`;
+    setPayResults((r) => ({ ...r, [key]: undefined as any }));
+    if (!connectedAddress) {
+      setPayResults((r) => ({ ...r, [key]: errorResult("Connect the safe wallet first.") }));
+      return;
+    }
+    setPayingKey(key);
+    const amountWei = BigInt(Math.round(claim.amount * 1e18));
+    const actions: WALLET_API.STRK20_ACTION[] = [
+      { type: "transfer", token: TOKEN, amount: num.toHex(amountWei), recipient: claim.starknetAddress },
+    ];
+    const setResult = (r: ActionResult) => setPayResults((prev) => ({ ...prev, [key]: r }));
+    const txH = await submit(actions, setResult, `${claim.amount.toFixed(4)} STRK`);
+    setPayingKey(null);
+    if (!txH) return;
+    try {
+      const res = await fetch("/api/claims/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          repoUrl: claim.repoUrl,
+          network: claim.network,
+          txHash: txH,
+          payerAddress: connectedAddress,
+        }),
+      });
+      if (res.ok) loadPendingClaims();
+    } catch {
+      // the transfer already succeeded on-chain; a failed bookkeeping call
+      // here just means the claim panel needs a manual refresh
+    }
   };
 
   // Complex action - echo invoke round-trip: withdraw 5 STRK to the helper, create an
@@ -493,6 +563,9 @@ export default function WalletAccountV6Tag() {
     unshield: { label: "You're unshielding", value: "1", token: "STRK", hint: "Withdraw to your account", cta: "Unshield", onRun: handleUnshield, result: resultUnshield, disabled: !isStrk20Network },
     echo: { label: "Echo invoke round-trip", value: "5", token: "STRK", hint: "Withdraw → helper → refill open note", cta: "Run echo", onRun: handleComplex, result: resultComplex, disabled: !isStrk20Network || !hasEchoHelper },
     balances: { label: "Shielded balances", value: "All", token: "tokens", hint: "Read your private pool balances", cta: "Query balances", onRun: handleBalances, result: resultBalances, disabled: !isStrk20Network },
+    // Not a single fixed action - rendered as its own list block below instead
+    // of through the generic CTA/result pattern the other tabs use.
+    pay: { label: "Pay pending claims", value: "", token: "", hint: "Private per-claim transfer", cta: "", onRun: () => {}, result: null, disabled: true },
   };
   const active = CONFIG[tab];
 
@@ -511,23 +584,60 @@ export default function WalletAccountV6Tag() {
         ))}
       </div>
 
-      {/* Active-action input block */}
-      <div className={styles.inputBlock}>
-        <div className={styles.inputLabel}>{active.label}</div>
-        <div className={styles.inputMain}>
-          <div className={styles.bigValue}>{active.value}</div>
-          <span className={styles.tokenPill}>
-            <span className={styles.tokenDot}>
-              <StrkCoin size={22} />
+      {/* Active-action input block (not shown for "pay" - it's a list, not one fixed action) */}
+      {tab !== "pay" && (
+        <div className={styles.inputBlock}>
+          <div className={styles.inputLabel}>{active.label}</div>
+          <div className={styles.inputMain}>
+            <div className={styles.bigValue}>{active.value}</div>
+            <span className={styles.tokenPill}>
+              <span className={styles.tokenDot}>
+                <StrkCoin size={22} />
+              </span>
+              {active.token}
             </span>
-            {active.token}
-          </span>
+          </div>
+          <div className={styles.subLine}>
+            <span>{active.hint}</span>
+            <span className={styles.subMono}>{shortWallet}</span>
+          </div>
         </div>
-        <div className={styles.subLine}>
-          <span>{active.hint}</span>
-          <span className={styles.subMono}>{shortWallet}</span>
+      )}
+
+      {/* Pending claims - one private "transfer" action per claim */}
+      {tab === "pay" && (
+        <div className={styles.inputBlock}>
+          <div className={styles.inputLabel}>Pending claims ({pendingClaims.length})</div>
+          {pendingClaims.length === 0 ? (
+            <div className={styles.subLine}>
+              <span>Nothing pending right now.</span>
+            </div>
+          ) : (
+            pendingClaims.map((c) => {
+              const key = `${c.repoUrl}::${c.network}`;
+              const result = payResults[key];
+              return (
+                <div key={key} style={{ marginTop: 12 }}>
+                  <div className={styles.subLine}>
+                    <span>
+                      {c.repoUrl.replace("https://github.com/", "")} · {c.network} · {fmtStrk(BigInt(Math.round(c.amount * 1e18)))} STRK
+                    </span>
+                    <span className={styles.subMono}>{shortHex(c.starknetAddress)}</span>
+                  </div>
+                  <button
+                    className={`${styles.btn} ${styles.btnGreen} ${styles.btnBlock}`}
+                    disabled={!isConnected || !isStrk20Network || payingKey === key}
+                    onClick={() => handlePayClaim(c)}
+                  >
+                    {payingKey === key ? "Sending private transfer…" : `Pay ${c.amount.toFixed(4)} STRK privately`}
+                  </button>
+                  {result ? <ResultCard r={result} /> : null}
+                </div>
+              );
+            })
+          )}
         </div>
-      </div>
+      )}
 
       {/* Info / network row */}
       <div className={styles.feeRow}>
@@ -562,14 +672,18 @@ export default function WalletAccountV6Tag() {
         </>
       )}
 
-      {/* Primary CTA - connect prompt until a wallet is connected. */}
-      {isConnected ? (
-        <button className={styles.btnCta} disabled={active.disabled} onClick={active.onRun}>
-          {active.cta}
-        </button>
-      ) : (
-        <SelectWallet variant="ctaBig" />
+      {/* Primary CTA - connect prompt until a wallet is connected. Not shown
+          for "pay": each claim has its own button in the list above. */}
+      {tab !== "pay" && (
+        isConnected ? (
+          <button className={styles.btnCta} disabled={active.disabled} onClick={active.onRun}>
+            {active.cta}
+          </button>
+        ) : (
+          <SelectWallet variant="ctaBig" />
+        )
       )}
+      {tab === "pay" && !isConnected && <SelectWallet variant="ctaBig" />}
 
       {/* Echo verdict */}
       {tab === "echo" && verdictComplex && (
