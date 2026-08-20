@@ -1,15 +1,22 @@
-import { Account, RpcProvider, CallData, uint256 } from "starknet";
+import { Account, RpcProvider, CallData, uint256, type Call } from "starknet";
 import type { AccountCandidate } from "./deriveAddress";
-import { RPC_URL, STRK_TOKEN, type Network } from "./networks";
+import { RPC_URL, STRK_TOKEN, ETH_TOKEN, type Network } from "./networks";
 
-// Left in the account to cover its own deploy + transfer fees. Generous on
-// Sepolia since it's testnet STRK; mainnet gas is real money, so the buffer
-// there is smaller — tune SAFE_WALLET_ADDRESS_MAINNET's own balance if fees
-// spike beyond this.
-const FEE_BUFFER: Record<Network, bigint> = {
-  sepolia: 5n * 10n ** 18n, // 5 STRK
-  mainnet: 2n * 10n ** 18n, // 2 STRK
+// Only used if fee simulation itself fails (RPC hiccup) — a conservative
+// flat fallback so the sweep still leaves *something* for gas rather than
+// guessing 0 and reverting.
+const FALLBACK_FEE_BUFFER: Record<Network, bigint> = {
+  sepolia: 5n * 10n ** 18n,
+  mainnet: 2n * 10n ** 18n,
 };
+
+// Padding on top of the simulated fee, to absorb price drift between
+// estimation and inclusion. If this undershoots, the whole multicall just
+// reverts (atomic — nothing is lost, the next scan retries with a fresh
+// estimate); if it oversimulates the account only leaves a little more
+// dust than strictly necessary. Real money either way, so err generous.
+const FEE_SAFETY_MARGIN_NUM = 3n;
+const FEE_SAFETY_MARGIN_DEN = 2n; // x1.5
 
 export interface RescueResult {
   rescued: boolean;
@@ -17,6 +24,7 @@ export interface RescueResult {
   transferTxHash?: string;
   amount?: string;
   amountStrk?: number;
+  ethAmount?: number;
   error?: string;
 }
 
@@ -29,18 +37,29 @@ async function isDeployed(provider: RpcProvider, address: string): Promise<boole
   }
 }
 
-async function strkBalance(provider: RpcProvider, address: string): Promise<bigint> {
+async function tokenBalance(provider: RpcProvider, token: string, address: string): Promise<bigint> {
   const res = await provider.callContract({
-    contractAddress: STRK_TOKEN,
+    contractAddress: token,
     entrypoint: "balanceOf",
     calldata: [address],
   });
   return BigInt(res[0] ?? "0x0");
 }
 
-// Sweeps STRK from a leaked, funded account to the safe address. Deploys the
-// account first if it's still counterfactual (deploy fee comes out of its
-// own balance, since it's already funded).
+function transferCall(token: string, recipient: string, amount: bigint): Call {
+  return {
+    contractAddress: token,
+    entrypoint: "transfer",
+    calldata: CallData.compile({ recipient, amount: uint256.bnToUint256(amount) }),
+  };
+}
+
+// Sweeps STRK (and ETH, if any) from a leaked, funded account to the safe
+// address. Deploys the account first if it's still counterfactual (deploy
+// fee comes out of its own balance, since it's already funded). Only STRK
+// and ETH — no swaps: converting other tokens would mean executing a trade
+// (price/slippage/route risk) on the leaked account's behalf, which this
+// bot deliberately doesn't do. See scan.ts if other tokens need surfacing.
 export async function rescueFunds(
   privateKey: string,
   candidate: AccountCandidate,
@@ -65,28 +84,51 @@ export async function rescueFunds(
       await provider.waitForTransaction(transaction_hash);
     }
 
-    const balance = await strkBalance(provider, candidate.address);
-    const feeBuffer = FEE_BUFFER[network];
-    if (balance <= feeBuffer) {
-      return { rescued: false, deployTxHash, error: "Balance too small to cover fees" };
-    }
-    const amount = balance - feeBuffer;
+    const [strkBalance, ethBalance] = await Promise.all([
+      tokenBalance(provider, STRK_TOKEN, candidate.address),
+      tokenBalance(provider, ETH_TOKEN, candidate.address),
+    ]);
 
-    const { transaction_hash } = await account.execute({
-      contractAddress: STRK_TOKEN,
-      entrypoint: "transfer",
-      calldata: CallData.compile({
-        recipient: safeAddress,
-        amount: uint256.bnToUint256(amount),
-      }),
-    });
+    // Fees on Starknet v3 are always paid in STRK, regardless of which
+    // token is being moved — no STRK means the account literally can't
+    // pay for its own rescue transaction.
+    if (strkBalance === 0n) {
+      return { rescued: false, deployTxHash, error: "No STRK balance to pay the rescue transaction's own fee" };
+    }
+
+    // Build with placeholder full-balance amounts first to get an accurate
+    // fee simulation (the felt value doesn't change execution cost), then
+    // shrink the STRK leg by the estimated fee before the real send.
+    const calls: Call[] = [];
+    if (ethBalance > 0n) calls.push(transferCall(ETH_TOKEN, safeAddress, ethBalance));
+    calls.push(transferCall(STRK_TOKEN, safeAddress, strkBalance));
+
+    let fee: bigint;
+    try {
+      const { overall_fee } = await account.estimateInvokeFee(calls);
+      fee = (overall_fee * FEE_SAFETY_MARGIN_NUM) / FEE_SAFETY_MARGIN_DEN;
+    } catch {
+      fee = FALLBACK_FEE_BUFFER[network];
+    }
+
+    if (strkBalance <= fee) {
+      return { rescued: false, deployTxHash, error: "Balance too small to cover its own rescue fee" };
+    }
+    const strkAmount = strkBalance - fee;
+    calls[calls.length - 1] = transferCall(STRK_TOKEN, safeAddress, strkAmount);
+
+    const { transaction_hash } = await account.execute(calls);
+
+    const parts = [`${Number(strkAmount) / 1e18} STRK`];
+    if (ethBalance > 0n) parts.push(`${Number(ethBalance) / 1e18} ETH`);
 
     return {
       rescued: true,
       deployTxHash,
       transferTxHash: transaction_hash,
-      amount: `${Number(amount) / 1e18} STRK`,
-      amountStrk: Number(amount) / 1e18,
+      amount: parts.join(" + "),
+      amountStrk: Number(strkAmount) / 1e18,
+      ethAmount: ethBalance > 0n ? Number(ethBalance) / 1e18 : undefined,
     };
   } catch (err: any) {
     return { rescued: false, deployTxHash, error: err?.message ?? "Rescue failed" };
