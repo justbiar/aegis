@@ -1,0 +1,13 @@
+name: Scan registry
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger registry scan
+        run: curl -sf --max-time 150 https://aegis-peach-six.vercel.app/api/scan-registry
