@@ -7,7 +7,6 @@ import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
 import { VaultBanner } from "./components/VaultBanner";
 import { ClaimPanel } from "./components/ClaimPanel";
-import WalletAccountV6Tag from "./components/client/WalletHandle/WalletAccountV6Tag";
 import type { ScanResult } from "@/lib/scan";
 
 const STEPS = [
@@ -182,28 +181,6 @@ export default function Page() {
             on-chain, and payout to a verified owner is a private transfer,
             not a public, front-runnable one.
           </p>
-        </div>
-      </section>
-
-      {/* ── STRK20 POOL PANEL ───────────────────────────────────────────── */}
-      <section id="pool" className="py-24 bg-ls-gray-50 dark:bg-ls-gray-900/40 border-y border-ls-gray-200 dark:border-ls-gray-800">
-        <div className="section-container">
-          <div className="text-center mb-12">
-            <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-3">
-              STRK20 pool
-            </p>
-            <h2 className="text-3xl font-bold text-black dark:text-white mb-3">
-              Shield, send, unshield — try it yourself
-            </h2>
-            <p className="text-ls-gray-500 dark:text-ls-gray-400 max-w-xl mx-auto">
-              Connect a Starknet wallet on Mainnet or Sepolia and drive the
-              privacy pool directly. Pending claims (below) get paid out
-              privately from here too, once the safe wallet is connected.
-            </p>
-          </div>
-          <div className="max-w-md mx-auto">
-            <WalletAccountV6Tag />
-          </div>
         </div>
       </section>
 
