@@ -235,7 +235,16 @@ export default function WalletAccountV6Tag() {
       const r = await myWalletAccount.strk20InvokeTransaction(actions);
       txH = r.transaction_hash;
     } catch (error: any) {
-      setResult(errorResult(error?.message ?? error?.toString?.() ?? String(error)));
+      const msg = error?.message ?? error?.toString?.() ?? String(error);
+      if (/NOT_REGISTERED/i.test(msg)) {
+        setResult(
+          errorResult(
+            "This account isn't registered with the pool yet. Registration should happen automatically the first time your wallet shields something - open your wallet's own Shield/Privacy feature directly (not through this site) and shield a small amount there once, then come back and try again."
+          )
+        );
+      } else {
+        setResult(errorResult(msg));
+      }
       return undefined;
     }
     setResult({
