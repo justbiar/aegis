@@ -3,11 +3,12 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useSession, signIn } from "next-auth/react";
-import { ShieldCheck, ScanSearch, Lock, KeyRound, ExternalLink } from "lucide-react";
+import { ShieldCheck, ScanSearch, Lock, KeyRound, ExternalLink, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
 import { VaultBanner } from "./components/VaultBanner";
 import { ClaimPanel } from "./components/ClaimPanel";
+import { HeroVisual } from "./components/HeroVisual";
 import type { ScanResult } from "@/lib/scan";
 
 const STEPS = [
@@ -63,82 +64,94 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-white dark:bg-ls-black">
+      <a href="#main-content" className="skip-link">
+        Skip to main content
+      </a>
       <Navbar />
-      <div className="pt-16">
+      <main id="main-content" className="pt-16">
         <VaultBanner
           rescuedCount={rescuedCount}
           rescuedTotal={rescuedTotal}
           rescuedCountMainnet={rescuedCountMainnet}
           rescuedTotalMainnet={rescuedTotalMainnet}
         />
-      </div>
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <section className="pt-32 pb-20">
         <div className="section-container">
-          <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="max-w-2xl"
-          >
-            <div className="ls-badge mb-8">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-              STRK20 Private Sprint
-            </div>
+          <div className="grid lg:grid-cols-[1fr_360px] gap-16 items-center">
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6 }}
+              className="max-w-2xl"
+            >
+              <div className="ls-badge mb-8">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                STRK20 Private Sprint
+              </div>
 
-            <h1 className="text-5xl lg:text-6xl font-bold text-black dark:text-white leading-tight tracking-tight mb-6">
-              Whitehat rescue for{" "}
-              <span style={{ color: "var(--pink)" }}>leaked keys</span>
-            </h1>
+              <h1 className="text-5xl lg:text-6xl font-bold text-black dark:text-white leading-tight tracking-tight mb-6">
+                Whitehat rescue for{" "}
+                <span style={{ color: "var(--pink)" }}>leaked keys</span>
+              </h1>
 
-            <p className="text-lg text-ls-gray-500 dark:text-ls-gray-400 leading-relaxed mb-10 max-w-xl">
-              Aegis scans public repos for accidentally committed keys that
-              control real funds, sweeps them into the STRK20 shielded pool
-              before an attacker can, and returns them once you prove you
-              own the repo.
-            </p>
+              <p className="text-lg text-ls-gray-500 dark:text-ls-gray-400 leading-relaxed mb-10 max-w-xl">
+                Aegis scans public repos for accidentally committed keys that
+                control real funds, sweeps them into the STRK20 shielded pool
+                before an attacker can, and returns them once you prove you
+                own the repo.
+              </p>
 
-            <div className="flex flex-wrap items-center gap-4">
-              {authStatus === "authenticated" ? (
-                <a href="#claim" className="btn-primary text-base px-8 py-3.5">
-                  <KeyRound size={16} /> Check your claim
+              <div className="flex flex-wrap items-center gap-4">
+                {authStatus === "authenticated" ? (
+                  <a href="#claim" className="btn-primary text-base px-8 py-3.5">
+                    <KeyRound size={16} /> Check your claim
+                  </a>
+                ) : (
+                  <button
+                    onClick={() => signIn("github")}
+                    disabled={authStatus === "loading"}
+                    className="btn-primary text-base px-8 py-3.5 disabled:opacity-50"
+                  >
+                    <KeyRound size={16} /> Connect GitHub
+                  </button>
+                )}
+                <a href="#registry" className="btn-ghost text-base px-8 py-3.5">
+                  See it in action →
                 </a>
-              ) : (
-                <button
-                  onClick={() => signIn("github")}
-                  disabled={authStatus === "loading"}
-                  className="btn-primary text-base px-8 py-3.5 disabled:opacity-50"
+                <a
+                  href="https://github.com/justbiar/aegis"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="btn-ghost text-base px-8 py-3.5"
                 >
-                  <KeyRound size={16} /> Connect GitHub
-                </button>
-              )}
-              <a href="#registry" className="btn-ghost text-base px-8 py-3.5">
-                See it in action →
-              </a>
-              <a
-                href="https://github.com/justbiar/aegis"
-                target="_blank"
-                rel="noreferrer"
-                className="btn-ghost text-base px-8 py-3.5"
-              >
-                <ExternalLink size={16} /> View source
-              </a>
-            </div>
+                  <ExternalLink size={16} /> View source
+                </a>
+              </div>
 
-            <div className="flex items-center gap-8 mt-12 pt-8 ls-divider">
-              {[
-                { label: "Network", value: "Starknet" },
-                { label: "Privacy layer", value: "STRK20 pool" },
-                { label: "License", value: "MIT" },
-              ].map((t) => (
-                <div key={t.label}>
-                  <p className="text-xs text-ls-gray-400">{t.label}</p>
-                  <p className="text-sm font-semibold text-black dark:text-white">{t.value}</p>
-                </div>
-              ))}
-            </div>
-          </motion.div>
+              <div className="flex items-center gap-8 mt-12 pt-8 ls-divider">
+                {[
+                  { label: "Network", value: "Starknet" },
+                  { label: "Privacy layer", value: "STRK20 pool" },
+                  { label: "License", value: "MIT" },
+                ].map((t) => (
+                  <div key={t.label}>
+                    <p className="text-xs text-ls-gray-400">{t.label}</p>
+                    <p className="text-sm font-semibold text-black dark:text-white">{t.value}</p>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, delay: 0.15 }}
+            >
+              <HeroVisual />
+            </motion.div>
+          </div>
         </div>
       </section>
 
@@ -182,22 +195,60 @@ export default function Page() {
 
       {/* ── WHY PRIVACY ─────────────────────────────────────────────────── */}
       <section className="bg-black dark:bg-ls-gray-950 py-24">
-        <div className="section-container max-w-3xl">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center">
-              <ShieldCheck size={16} className="text-black" />
+        <div className="section-container">
+          <div className="grid lg:grid-cols-[1.1fr_1fr] gap-14 items-center max-w-6xl mx-auto">
+            <div>
+              <div className="flex items-center gap-3 mb-8">
+                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center">
+                  <ShieldCheck size={16} className="text-black" />
+                </div>
+                <span className="text-white font-bold text-lg">Why it needs privacy</span>
+              </div>
+              <p className="text-xl lg:text-2xl font-medium text-white/90 leading-relaxed">
+                A sweep-and-return service is only as safe as its own holding
+                address. A transparent wallet is a target — anyone watching the
+                mempool can front-run the rescue or drain it the moment it's
+                known. Routing rescued funds through the STRK20 shielded pool
+                removes that window: the holding balance isn't linkable
+                on-chain, and payout to a verified owner is a private transfer,
+                not a public, front-runnable one.
+              </p>
             </div>
-            <span className="text-white font-bold text-lg">Why it needs privacy</span>
+
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.5 }}
+              className="flex flex-col sm:flex-row lg:flex-col gap-4"
+            >
+              <div className="flex-1 rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <Eye size={16} className="text-red-400" />
+                  <span className="text-sm font-bold text-red-300">Transparent wallet</span>
+                </div>
+                <p className="text-sm text-white/50 leading-relaxed">
+                  Holding balance visible to anyone. A rescue in flight can be
+                  front-run or drained the moment it's spotted.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-center lg:py-1">
+                <ArrowRight size={18} className="text-white/20 -rotate-90 lg:rotate-0" />
+              </div>
+
+              <div className="flex-1 rounded-2xl border border-white/15 bg-white/[0.04] p-5">
+                <div className="flex items-center gap-2 mb-3">
+                  <EyeOff size={16} className="text-white" />
+                  <span className="text-sm font-bold text-white">STRK20 shielded pool</span>
+                </div>
+                <p className="text-sm text-white/50 leading-relaxed">
+                  Holding balance and payout are unlinkable on-chain — nothing
+                  to front-run, nothing to watch.
+                </p>
+              </div>
+            </motion.div>
           </div>
-          <p className="text-xl lg:text-2xl font-medium text-white/90 leading-relaxed">
-            A sweep-and-return service is only as safe as its own holding
-            address. A transparent wallet is a target — anyone watching the
-            mempool can front-run the rescue or drain it the moment it's
-            known. Routing rescued funds through the STRK20 shielded pool
-            removes that window: the holding balance isn't linkable
-            on-chain, and payout to a verified owner is a private transfer,
-            not a public, front-runnable one.
-          </p>
         </div>
       </section>
 
@@ -220,6 +271,7 @@ export default function Page() {
           <RegistryTable onResults={handleScanResults} />
         </div>
       </section>
+      </main>
 
       {/* ── FOOTER ──────────────────────────────────────────────────────── */}
       <footer className="bg-black dark:bg-ls-gray-950 border-t border-ls-gray-900">

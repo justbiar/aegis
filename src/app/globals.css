@@ -76,6 +76,29 @@ body {
   color: #ffffff;
 }
 
+/* ── Accessibility: visible keyboard focus ───────────────────────────────
+   Applied to every interactive class below via @apply, plus bare elements
+   (links, inputs, range sliders) that don't use those classes. Uses
+   :focus-visible so it only shows for keyboard/AT users, not mouse clicks. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--pink);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+input[type="range"]:focus-visible {
+  outline-offset: 4px;
+}
+
+/* Skip-to-content link — hidden until keyboard-focused, first tab stop. */
+.skip-link {
+  @apply fixed top-3 left-3 z-[100] -translate-y-16 focus:translate-y-0
+    bg-black text-white dark:bg-white dark:text-black
+    px-4 py-2 rounded-lg text-sm font-semibold transition-transform duration-150;
+}
+
 /* ── Lightspark-style utilities, dark-mode aware ─────────────────────────── */
 
 .btn-primary {
