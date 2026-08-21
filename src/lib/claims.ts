@@ -13,6 +13,8 @@ const KV_URL = process.env.KV_REST_API_URL;
 const KV_TOKEN = process.env.KV_REST_API_TOKEN;
 const CLAIMS_KEY = "aegis:claims";
 
+export const DEFAULT_TIP_PERCENT = 2;
+
 export interface ClaimRecord {
   repoUrl: string;
   githubLogin: string;
@@ -44,7 +46,15 @@ export async function getClaims(): Promise<ClaimRecord[]> {
     });
     const data = await res.json();
     const raw: string[] = data.result ?? [];
-    return raw.map((s) => JSON.parse(s) as ClaimRecord);
+    return raw.map((s) => {
+      const c = JSON.parse(s) as ClaimRecord;
+      // Claims stored before tipPercent existed have no such field - default
+      // it on read so old records don't render as NaN everywhere.
+      if (typeof c.tipPercent !== "number" || !Number.isFinite(c.tipPercent)) {
+        c.tipPercent = DEFAULT_TIP_PERCENT;
+      }
+      return c;
+    });
   } catch {
     return [];
   }

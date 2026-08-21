@@ -159,9 +159,13 @@ interface WalletAccountV6TagProps {
   // Balances), showing only the Pay claims list - used where this panel is
   // embedded just to pay claims, not to browse the whole wallet demo.
   onlyPay?: boolean;
+  // Called right after a claim is successfully marked paid, so a parent
+  // showing its own copy of the claim list (e.g. ClaimPanel's "your claims")
+  // can refresh instead of sitting stale until the page reloads.
+  onClaimPaid?: () => void;
 }
 
-export default function WalletAccountV6Tag({ onlyPay = false }: WalletAccountV6TagProps = {}) {
+export default function WalletAccountV6Tag({ onlyPay = false, onClaimPaid }: WalletAccountV6TagProps = {}) {
   const myFrontendProviderIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex
   );
@@ -412,7 +416,10 @@ export default function WalletAccountV6Tag({ onlyPay = false }: WalletAccountV6T
           payerAddress: connectedAddress,
         }),
       });
-      if (res.ok) loadPendingClaims();
+      if (res.ok) {
+        loadPendingClaims();
+        onClaimPaid?.();
+      }
     } catch {
       // the transfer already succeeded on-chain; a failed bookkeeping call
       // here just means the claim panel needs a manual refresh
