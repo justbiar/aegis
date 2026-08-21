@@ -65,14 +65,18 @@ private transfer, not a public, front-runnable one.
 - ✅ Verified detection (real balance checks, real credential liveness checks — not just regex)
 - ✅ Private-key → funded-account derivation with zero manual input
 - ✅ Automatic sweep to a safe address, tested end-to-end on **both Sepolia and mainnet** with real funds — mainnet example: [`0x13fc35b0…afe083fd`](https://voyager.online/tx/0x13fc35b018ddc48f86f40f5966330e03fe2e2a235bf795e61c83004afe083fd), [`0x4607b8bb…d99698d`](https://voyager.online/tx/0x4607b8bbc7bf6ef58a0fbde6d0a065143530aa9c267f4042d5188382d99698d)
-- 🚧 GitHub-verified claim/payout flow
-- 🚧 Routing rescued funds through the STRK20 shielded pool (currently a plain transfer — the mainnet transactions above move real funds correctly, but not through the pool yet)
+- ✅ GitHub-verified claims — a repo owner signs in, we check their login against the repo's owner segment and the rescue ledger, they register a Starknet address
+- ✅ Payout through the real STRK20 shielded pool (mainnet, `strk20.json`), not a plain transfer — safe wallet registers, shields, and pays a claim out as a private note-to-note transfer (no amount, no parties on-chain); a claim sits pending until it's paid this way, deliberately batched with others rather than instant, since an isolated deposit-then-withdraw pair is the one thing actually correlatable in this scheme
+- 🚧 Fully automatic private payout — right now the shield/private-transfer step needs a connected wallet (no mainnet proving service is publicly available yet for a headless signer; see [issue #124](https://github.com/starkience/strk20-hackathon/issues/124)), so it's a deliberate manual step rather than instant
 
 ## Stack
 
-- **Next.js 16** (App Router) + TypeScript
-- **starknet.js v10** — Sepolia RPC, account derivation, deploy + sweep
-- **next-auth v5** — GitHub OAuth for the upcoming claim flow
+- **Next.js 16** (App Router) + **React 19** + **TypeScript**
+- **starknet.js v10** — RPC, account derivation, deploy + sweep, on both Sepolia and mainnet
+- **get-starknet** — wallet connection (Argent/Ready) for the STRK20 pool panel
+- **AVNU SDK** — whitelisted-token → STRK swaps before a sweep, and quote/execute for the shield/send/unshield panel
+- **Cairo** (`cairo/`, Scarb) — `StrkInvokeHelper`, deployed on mainnet, exercises the pool's withdraw → invoke → open-note flow
+- **next-auth v5** — GitHub OAuth, verifies repo ownership for claims
 - **Tailwind CSS**
 
 ## Running locally
