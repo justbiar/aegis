@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getLedger } from "@/lib/ledger";
 import { getClaims, recordClaimRequest, type ClaimRecord } from "@/lib/claims";
-import { payoutClaim } from "@/lib/payout";
 import type { Network } from "@/lib/networks";
 
 function repoOwner(repoUrl: string): string | null {
@@ -54,11 +53,14 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ claimable, claims: myClaims });
 }
 
-// POST { repoUrl, network, starknetAddress } — pays a verified owner out
-// immediately (plain transfer, see payout.ts) so they're not stuck waiting
-// on someone to trigger a private send. Falls back to a pending claim (for
-// the manual/private "Pay claims" tab) only if the automatic payout itself
-// fails, e.g. SAFE_WALLET_PRIVATE_KEY not set yet.
+// POST { repoUrl, network, starknetAddress } — registers where a verified
+// owner's payout should go. Deliberately doesn't pay out here: a private
+// payout needs the safe wallet's shielded balance to already hold enough
+// funds mixed in with other rescues (see the "Pay claims" tab), and paying
+// out the instant a claim lands undermines exactly that — a lone deposit
+// followed immediately by a matching withdrawal is the one thing that's
+// actually correlatable in this scheme. Sits "pending" until someone pays
+// it out privately, batched with whatever else is waiting.
 export async function POST(req: NextRequest) {
   const session = await auth();
   const login = (session?.user as any)?.login as string | undefined;
@@ -90,21 +92,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Already claimed" }, { status: 409 });
   }
 
-  const payout = await payoutClaim(network, starknetAddress, amount);
-
   const claim: ClaimRecord = {
     repoUrl,
     githubLogin: login,
     starknetAddress,
     amount,
     network,
-    status: payout.paid ? "paid" : "pending",
+    status: "pending",
     requestedAt: Date.now(),
-    ...(payout.paid ? { paidTxHash: payout.txHash, paidAt: Date.now(), paidPrivately: false } : {}),
   };
   await recordClaimRequest(claim);
-  return NextResponse.json({
-    claim,
-    warning: payout.paid ? undefined : `Automatic payout failed (${payout.error}) — recorded as pending for manual payout instead.`,
-  });
+  return NextResponse.json({ claim });
 }

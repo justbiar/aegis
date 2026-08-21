@@ -62,7 +62,6 @@ export function ClaimPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit claim");
-      if (data.warning) setError((e) => ({ ...e, [key]: data.warning }));
       load();
     } catch (e: any) {
       setError((err) => ({ ...err, [key]: e.message ?? "Failed to submit claim" }));
@@ -98,7 +97,7 @@ export function ClaimPanel() {
               <div className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"
-                  placeholder="Your Starknet address (paid out immediately on submit)"
+                  placeholder="Your Starknet address, registered with the pool (paid out as a private transfer)"
                   value={addresses[key] ?? ""}
                   onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
                   className="flex-1 px-3 py-2 text-sm rounded-lg border border-ls-gray-300 dark:border-ls-gray-700
