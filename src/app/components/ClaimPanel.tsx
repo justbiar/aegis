@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
-import { ExternalLink, Loader2, KeyRound } from "lucide-react";
+import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Wallet2 } from "lucide-react";
 import * as constants from "@/utils/constants";
 import { useStoreWallet } from "./Wallet/walletContext";
 import { useFrontendProvider } from "./client/provider/providerContext";
@@ -28,13 +28,20 @@ interface Claim {
   paidPrivately?: boolean;
 }
 
-function TipSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
-  const net = (100 - value).toFixed(1);
+function TipSlider({ value, onChange, amount }: { value: number; onChange: (v: number) => void; amount: number }) {
+  const netPercent = 100 - value;
+  const netAmount = amount * (netPercent / 100);
+  const heldAmount = amount * (value / 100);
   return (
     <div className="flex-1 min-w-[220px]">
-      <div className="flex items-center justify-between text-xs text-ls-gray-500 dark:text-ls-gray-400 mb-1">
-        <span>Leave {value}% to cover the payout's network fee and support Aegis</span>
-        <span className="font-semibold">{net}% to you</span>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-1.5">
+        <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
+          Held back for fees + Aegis: <span className="font-semibold text-black dark:text-white">{value}%</span>
+          {" "}({heldAmount.toFixed(4)} STRK)
+        </p>
+        <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+          You receive {netAmount.toFixed(4)} STRK ({netPercent.toFixed(1)}%)
+        </p>
       </div>
       <input
         type="range"
@@ -44,6 +51,8 @@ function TipSlider({ value, onChange }: { value: number; onChange: (v: number) =
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full accent-black dark:accent-white"
+        aria-label="Percentage held back for fees and Aegis, rest paid to you"
+        aria-valuetext={`${value}% held back, you receive ${netPercent.toFixed(1)}%`}
       />
     </div>
   );
@@ -159,20 +168,30 @@ export function ClaimPanel() {
             {claimable.map((c) => {
               const key = `${c.repoUrl}::${c.network}`;
               return (
-                <div key={key} className="ls-card mb-4">
-                  <div className="flex items-center justify-between gap-4 mb-3">
-                    <div>
-                      <p className="font-semibold text-black dark:text-white">
+                <div key={key} className="ls-card mb-4 border-l-4 border-l-amber-400 dark:border-l-amber-500">
+                  <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                    <div className="min-w-0">
+                      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 mb-1.5">
+                        <Sparkles size={12} /> Ready to claim
+                      </p>
+                      <p className="font-semibold text-black dark:text-white truncate">
                         {c.repoUrl.replace("https://github.com/", "")}
                       </p>
-                      <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
-                        {c.amount.toFixed(4)} STRK rescued on {c.network}
+                      <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
+                        rescued on {c.network}
                       </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="hero-stat text-2xl text-black dark:text-white leading-none">
+                        {c.amount.toFixed(4)}
+                      </p>
+                      <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
                     </div>
                   </div>
                   <div className="flex flex-col sm:flex-row gap-2 mb-3">
                     <input
                       type="text"
+                      aria-label="Your Starknet address, registered with the pool"
                       placeholder="Your Starknet address, registered with the pool (paid out as a private transfer)"
                       value={addresses[key] ?? ""}
                       onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
@@ -190,6 +209,7 @@ export function ClaimPanel() {
                   <TipSlider
                     value={tips[key] ?? DEFAULT_TIP_PERCENT}
                     onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
+                    amount={c.amount}
                   />
                   {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
                 </div>
@@ -197,16 +217,33 @@ export function ClaimPanel() {
             })}
 
             {claims.some((c) => c.status === "pending") && (
-              <div className="ls-card mb-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-1">
-                    Safe wallet
-                  </p>
-                  <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
-                    {isWalletConnected
-                      ? `Connected · ${walletNetworkName ?? "unsupported network"} · ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`
-                      : "Connect it to pay out pending claims privately, right from the card below."}
-                  </p>
+              <div
+                className={`ls-card mb-4 flex items-center justify-between gap-3 ${
+                  isWalletConnected
+                    ? "border-emerald-200 dark:border-emerald-800/60"
+                    : "border-dashed"
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div
+                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      isWalletConnected
+                        ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                        : "bg-ls-gray-100 text-ls-gray-400 dark:bg-ls-gray-800 dark:text-ls-gray-500"
+                    }`}
+                  >
+                    <Wallet2 size={16} />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-0.5">
+                      Safe wallet
+                    </p>
+                    <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400 truncate">
+                      {isWalletConnected
+                        ? `Connected · ${walletNetworkName ?? "unsupported network"} · ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`
+                        : "Connect it to pay out pending claims privately, right from the card below."}
+                    </p>
+                  </div>
                 </div>
                 <SelectWallet variant="nav" />
               </div>
@@ -219,34 +256,54 @@ export function ClaimPanel() {
                 ((addresses[key] !== undefined && addresses[key] !== c.starknetAddress) ||
                   (tips[key] !== undefined && tips[key] !== c.tipPercent));
               return (
-                <div key={key} className="ls-card mb-4">
-                  <div className="flex items-center justify-between gap-4 mb-3">
-                    <div>
-                      <p className="font-semibold text-black dark:text-white">
+                <div
+                  key={key}
+                  className={`ls-card mb-4 border-l-4 ${
+                    c.status === "paid"
+                      ? "border-l-emerald-400 dark:border-l-emerald-500"
+                      : "border-l-ls-gray-300 dark:border-l-ls-gray-700"
+                  }`}
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
+                    <div className="min-w-0">
+                      <p
+                        className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest mb-1.5 ${
+                          c.status === "paid"
+                            ? "text-emerald-600 dark:text-emerald-400"
+                            : "text-ls-gray-400"
+                        }`}
+                      >
+                        {c.status === "paid" ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
+                        {c.status === "paid" ? (c.paidPrivately ? "Paid privately" : "Paid") : "Pending payout"}
+                      </p>
+                      <p className="font-semibold text-black dark:text-white truncate">
                         {c.repoUrl.replace("https://github.com/", "")}
                       </p>
-                      <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
-                        {c.amount.toFixed(4)} STRK · {c.network}
-                      </p>
+                      <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">{c.network}</p>
                     </div>
-                    {c.status === "paid" ? (
-                      <a
-                        href={`https://${c.network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${c.paidTxHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="tag-clean flex items-center gap-1"
-                      >
-                        {c.paidPrivately ? "Paid privately" : "Paid"} <ExternalLink size={11} />
-                      </a>
-                    ) : (
-                      <span className="tag-pending">Pending payout</span>
-                    )}
+                    <div className="text-right shrink-0">
+                      <p className="hero-stat text-2xl text-black dark:text-white leading-none">
+                        {c.amount.toFixed(4)}
+                      </p>
+                      <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
+                      {c.status === "paid" && (
+                        <a
+                          href={`https://${c.network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${c.paidTxHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="link-arrow text-xs mt-1.5"
+                        >
+                          View tx <ExternalLink size={11} />
+                        </a>
+                      )}
+                    </div>
                   </div>
                   {c.status === "pending" && (
                     <>
                       <div className="flex flex-col sm:flex-row gap-2 mb-3">
                         <input
                           type="text"
+                          aria-label="Starknet address to receive this"
                           placeholder="Starknet address to receive this"
                           value={addresses[key] ?? ""}
                           onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
@@ -267,6 +324,7 @@ export function ClaimPanel() {
                       <TipSlider
                         value={tips[key] ?? c.tipPercent}
                         onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
+                        amount={c.amount}
                       />
                       {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
                       {hasUnsavedEdits ? (

@@ -107,7 +107,7 @@ export default function PayClaimInline({ repoUrl, network, amount, tipPercent, s
   }
 
   return (
-    <div className="mt-3">
+    <div className="mt-3" aria-live="polite">
       {!isConnected ? (
         <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
           Connect the safe wallet above to pay this out privately.
