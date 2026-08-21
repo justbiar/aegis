@@ -57,17 +57,18 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
   const animatedBalance = useCountUp(balance ?? 0);
   const animatedRescued = useCountUp(totalRescued);
 
-  const statSize = compact ? "text-lg" : "text-2xl";
+  const statSize = compact ? "text-xl" : "text-3xl";
   const labelSize = compact ? "text-[10px]" : "text-[11px]";
 
   return (
-    <div className={`flex flex-wrap items-center justify-between gap-x-8 gap-y-3 ${compact ? "py-2.5" : "py-4"}`}>
-      <div className="flex items-center gap-3">
+    <div className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 ${compact ? "py-3" : "py-5"}`}>
+      <div className="flex items-center gap-3 min-w-0">
         <div className={`${compact ? "w-7 h-7" : "w-9 h-9"} rounded-xl bg-white/10 flex items-center justify-center shrink-0`}>
           <Vault size={compact ? 14 : 18} className="text-white" />
         </div>
-        <div>
-          <p className={`${labelSize} font-bold uppercase tracking-widest text-white/40`}>
+        <div className="min-w-0">
+          <p className={`${labelSize} font-bold uppercase tracking-widest text-white/40 flex items-center gap-1.5`}>
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${network === "mainnet" ? "bg-emerald-400" : "bg-amber-400"}`} />
             Aegis Vault · {label}
           </p>
           {info?.address ? (
@@ -75,9 +76,9 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
               href={`${explorer}${info.address}`}
               target="_blank"
               rel="noreferrer"
-              className="text-xs text-white/50 hover:text-white/80 transition-colors flex items-center gap-1"
+              className="text-xs text-white/50 hover:text-white/80 transition-colors inline-flex items-center gap-1 truncate"
             >
-              {info.address.slice(0, 10)}…{info.address.slice(-6)} <ExternalLink size={10} />
+              {info.address.slice(0, 10)}…{info.address.slice(-6)} <ExternalLink size={10} className="shrink-0" />
             </a>
           ) : info === null ? (
             <p className="text-xs text-white/30">Loading address…</p>
@@ -87,12 +88,12 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
         </div>
       </div>
 
-      <div className="flex items-center gap-8">
-        <div className="text-right">
+      <div className="grid grid-cols-2 sm:flex sm:items-center gap-x-6 gap-y-2 sm:gap-8 pl-[calc(1.75rem+0.75rem)] sm:pl-0">
+        <div className="text-left sm:text-right">
           <p className={`${labelSize} font-semibold uppercase tracking-widest text-white/40 mb-0.5`}>
             Vault balance
           </p>
-          <p className={`hero-stat ${statSize} text-white`}>
+          <p className={`hero-stat ${statSize} text-white leading-none`}>
             {balance === null ? (
               <span className="text-white/30">—</span>
             ) : (
@@ -104,25 +105,27 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
           </p>
         </div>
 
-        <div className="w-px h-9 bg-white/10" />
+        <div className="hidden sm:block w-px h-9 bg-white/10" />
 
-        <div className="text-right">
+        <div className="text-left sm:text-right">
           <p className={`${labelSize} font-semibold uppercase tracking-widest text-white/40 mb-0.5`}>
             Total rescued
           </p>
-          <p className={`hero-stat ${statSize} text-white`}>
+          <p className={`hero-stat ${statSize} text-white leading-none`}>
             {ledgerAvailable || totalCount > 0 ? (
               <>
                 {animatedRescued.toFixed(2)}{" "}
                 <span className="text-sm font-semibold text-white/40">STRK</span>
-                <span className="text-sm font-semibold text-white/40 ml-1.5">
-                  · {totalCount} {totalCount === 1 ? "account" : "accounts"}
-                </span>
               </>
             ) : (
               <span className="text-white/30 text-base font-medium">Not tracked yet</span>
             )}
           </p>
+          {(ledgerAvailable || totalCount > 0) && (
+            <p className="text-xs font-medium text-white/40 mt-0.5">
+              {totalCount} {totalCount === 1 ? "account" : "accounts"}
+            </p>
+          )}
         </div>
       </div>
     </div>
