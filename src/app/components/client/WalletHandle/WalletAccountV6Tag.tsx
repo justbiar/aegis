@@ -153,7 +153,14 @@ interface PendingClaim {
   network: "mainnet" | "sepolia";
 }
 
-export default function WalletAccountV6Tag() {
+interface WalletAccountV6TagProps {
+  // Hides the tab bar and the other demo actions (Shield/Send/Unshield/Echo/
+  // Balances), showing only the Pay claims list - used where this panel is
+  // embedded just to pay claims, not to browse the whole wallet demo.
+  onlyPay?: boolean;
+}
+
+export default function WalletAccountV6Tag({ onlyPay = false }: WalletAccountV6TagProps = {}) {
   const myFrontendProviderIndex = useFrontendProvider(
     (state) => state.currentFrontendProviderIndex
   );
@@ -188,7 +195,7 @@ export default function WalletAccountV6Tag() {
   const [resultDeploy, setResultDeploy] = useState<ActionResult | null>(null);
   const [deploying, setDeploying] = useState<boolean>(false);
   // Active action tab (Umbra-style single-action interface).
-  const [tab, setTab] = useState<TabKey>("shield");
+  const [tab, setTab] = useState<TabKey>(onlyPay ? "pay" : "shield");
 
   // Pending claims to pay out (see /api/claims) - a private, per-claim
   // STRK20 "transfer" action, not the fixed one-button pattern the other
@@ -581,17 +588,19 @@ export default function WalletAccountV6Tag() {
   return (
     <div className={styles.panel}>
       {/* Action tabs */}
-      <div className={styles.tabs}>
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            className={`${styles.tab} ${tab === t.key ? styles.tabActive : ""}`}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      {!onlyPay && (
+        <div className={styles.tabs}>
+          {TABS.map((t) => (
+            <button
+              key={t.key}
+              className={`${styles.tab} ${tab === t.key ? styles.tabActive : ""}`}
+              onClick={() => setTab(t.key)}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Active-action input block (not shown for "pay" - it's a list, not one fixed action) */}
       {tab !== "pay" && (

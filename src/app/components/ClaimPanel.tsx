@@ -168,7 +168,7 @@ export function ClaimPanel() {
             pending claims privately.
           </p>
           <div className="max-w-md">
-            <WalletAccountV6Tag />
+            <WalletAccountV6Tag onlyPay />
           </div>
         </div>
       </div>
