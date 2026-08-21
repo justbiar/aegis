@@ -195,8 +195,7 @@ export function ClaimPanel() {
                       placeholder="Your Starknet address, registered with the pool (paid out as a private transfer)"
                       value={addresses[key] ?? ""}
                       onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
-                      className="flex-1 px-3 py-2 text-sm rounded-lg border border-ls-gray-300 dark:border-ls-gray-700
-                        bg-white dark:bg-ls-black text-black dark:text-white"
+                      className="flex-1 ls-input"
                     />
                     <button
                       onClick={() => submit(c.repoUrl, c.network)}
@@ -261,7 +260,7 @@ export function ClaimPanel() {
                   className={`ls-card mb-4 border-l-4 ${
                     c.status === "paid"
                       ? "border-l-emerald-400 dark:border-l-emerald-500"
-                      : "border-l-ls-gray-300 dark:border-l-ls-gray-700"
+                      : "border-l-ls-gray-400 dark:border-l-ls-gray-500"
                   }`}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
@@ -307,8 +306,7 @@ export function ClaimPanel() {
                           placeholder="Starknet address to receive this"
                           value={addresses[key] ?? ""}
                           onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
-                          className="flex-1 px-3 py-2 text-sm rounded-lg border border-ls-gray-300 dark:border-ls-gray-700
-                            bg-white dark:bg-ls-black text-black dark:text-white"
+                          className="flex-1 ls-input"
                         />
                         <button
                           onClick={() => submit(c.repoUrl, c.network)}

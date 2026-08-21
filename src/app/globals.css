@@ -121,6 +121,16 @@ input[type="range"]:focus-visible {
     dark:text-white;
 }
 
+/* Text input sitting inside a .ls-card. dark:bg-ls-gray-800 (not pure
+   black) keeps it visually nested inside the card instead of reading as a
+   disconnected black box against the card's dark:bg-ls-gray-900. */
+.ls-input {
+  @apply px-3 py-2 text-sm rounded-lg border border-ls-gray-300 bg-white text-black
+    placeholder:text-ls-gray-400
+    dark:border-ls-gray-700 dark:bg-ls-gray-800 dark:text-white dark:placeholder:text-ls-gray-500
+    transition-colors duration-150;
+}
+
 .section-container {
   @apply max-w-7xl mx-auto px-6 lg:px-8;
 }
