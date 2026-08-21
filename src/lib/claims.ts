@@ -72,6 +72,29 @@ export async function recordClaimRequest(claim: ClaimRecord): Promise<void> {
   }
 }
 
+// Lets a claimant change the destination address while it's still pending —
+// mistyped address, or just changed their mind about which wallet should
+// receive it. Once paid, a claim is immutable (nothing to update).
+export async function updatePendingClaimAddress(
+  repoUrl: string,
+  network: Network,
+  githubLogin: string,
+  starknetAddress: string,
+): Promise<boolean> {
+  const claims = await getClaims();
+  const claim = claims.find(
+    (c) =>
+      c.repoUrl === repoUrl &&
+      c.network === network &&
+      c.githubLogin.toLowerCase() === githubLogin.toLowerCase() &&
+      c.status === "pending",
+  );
+  if (!claim) return false;
+  claim.starknetAddress = starknetAddress;
+  await saveClaims(claims);
+  return true;
+}
+
 export async function markClaimPaid(
   repoUrl: string,
   network: Network,

@@ -16,6 +16,7 @@ interface Claim {
   network: "mainnet" | "sepolia";
   amount: number;
   status: "pending" | "paid";
+  starknetAddress: string;
   paidTxHash?: string;
   paidPrivately?: boolean;
 }
@@ -42,8 +43,21 @@ export function ClaimPanel() {
     if (status === "authenticated") load();
   }, [status]);
 
-  const submit = async (c: Claimable) => {
-    const key = `${c.repoUrl}::${c.network}`;
+  // Seed the address inputs for pending claims with their current value,
+  // so editing shows what's there instead of an empty box.
+  useEffect(() => {
+    setAddresses((a) => {
+      const next = { ...a };
+      for (const c of claims) {
+        const key = `${c.repoUrl}::${c.network}`;
+        if (c.status === "pending" && next[key] === undefined) next[key] = c.starknetAddress;
+      }
+      return next;
+    });
+  }, [claims]);
+
+  const submit = async (repoUrl: string, network: "mainnet" | "sepolia") => {
+    const key = `${repoUrl}::${network}`;
     const starknetAddress = addresses[key]?.trim();
     if (!starknetAddress) {
       setError((e) => ({ ...e, [key]: "Enter the Starknet address that should receive this" }));
@@ -55,7 +69,7 @@ export function ClaimPanel() {
       const res = await fetch("/api/claims", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl: c.repoUrl, network: c.network, starknetAddress }),
+        body: JSON.stringify({ repoUrl, network, starknetAddress }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit claim");
@@ -120,7 +134,7 @@ export function ClaimPanel() {
                         bg-white dark:bg-ls-black text-black dark:text-white"
                     />
                     <button
-                      onClick={() => submit(c)}
+                      onClick={() => submit(c.repoUrl, c.network)}
                       disabled={submitting === key}
                       className="btn-primary text-sm px-5 py-2 whitespace-nowrap disabled:opacity-50"
                     >
@@ -132,30 +146,57 @@ export function ClaimPanel() {
               );
             })}
 
-            {claims.map((c) => (
-              <div key={`${c.repoUrl}::${c.network}`} className="ls-card mb-4 flex items-center justify-between">
-                <div>
-                  <p className="font-semibold text-black dark:text-white">
-                    {c.repoUrl.replace("https://github.com/", "")}
-                  </p>
-                  <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
-                    {c.amount.toFixed(4)} STRK · {c.network}
-                  </p>
+            {claims.map((c) => {
+              const key = `${c.repoUrl}::${c.network}`;
+              return (
+                <div key={key} className="ls-card mb-4">
+                  <div className="flex items-center justify-between gap-4 mb-3">
+                    <div>
+                      <p className="font-semibold text-black dark:text-white">
+                        {c.repoUrl.replace("https://github.com/", "")}
+                      </p>
+                      <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
+                        {c.amount.toFixed(4)} STRK · {c.network}
+                      </p>
+                    </div>
+                    {c.status === "paid" ? (
+                      <a
+                        href={`https://${c.network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${c.paidTxHash}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="tag-clean flex items-center gap-1"
+                      >
+                        {c.paidPrivately ? "Paid privately" : "Paid"} <ExternalLink size={11} />
+                      </a>
+                    ) : (
+                      <span className="tag-pending">Pending payout</span>
+                    )}
+                  </div>
+                  {c.status === "pending" && (
+                    <>
+                      <div className="flex flex-col sm:flex-row gap-2">
+                        <input
+                          type="text"
+                          placeholder="Starknet address to receive this"
+                          value={addresses[key] ?? ""}
+                          onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
+                          className="flex-1 px-3 py-2 text-sm rounded-lg border border-ls-gray-300 dark:border-ls-gray-700
+                            bg-white dark:bg-ls-black text-black dark:text-white"
+                        />
+                        <button
+                          onClick={() => submit(c.repoUrl, c.network)}
+                          disabled={submitting === key || addresses[key] === c.starknetAddress}
+                          className="btn-ghost text-sm px-5 py-2 whitespace-nowrap disabled:opacity-50"
+                        >
+                          {submitting === key ? <Loader2 size={14} className="animate-spin" /> : "Update address"}
+                        </button>
+                      </div>
+                      {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
+                    </>
+                  )}
                 </div>
-                {c.status === "paid" ? (
-                  <a
-                    href={`https://${c.network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${c.paidTxHash}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="tag-clean flex items-center gap-1"
-                  >
-                    {c.paidPrivately ? "Paid privately" : "Paid"} <ExternalLink size={11} />
-                  </a>
-                ) : (
-                  <span className="tag-pending">Pending payout</span>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </>
         )}
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getLedger } from "@/lib/ledger";
-import { getClaims, recordClaimRequest, type ClaimRecord } from "@/lib/claims";
+import { getClaims, recordClaimRequest, updatePendingClaimAddress, type ClaimRecord } from "@/lib/claims";
 import type { Network } from "@/lib/networks";
 
 function repoOwner(repoUrl: string): string | null {
@@ -88,8 +88,18 @@ export async function POST(req: NextRequest) {
   }
 
   const claims = await getClaims();
-  if (claims.some((c) => c.repoUrl === repoUrl && c.network === network)) {
-    return NextResponse.json({ error: "Already claimed" }, { status: 409 });
+  const existing = claims.find((c) => c.repoUrl === repoUrl && c.network === network);
+  if (existing) {
+    if (existing.status === "paid") {
+      return NextResponse.json({ error: "Already paid out" }, { status: 409 });
+    }
+    // Still pending — let them correct the address (wrong wallet, changed
+    // their mind) rather than getting stuck with the first one they typed.
+    const updated = await updatePendingClaimAddress(repoUrl, network, login, starknetAddress);
+    if (!updated) {
+      return NextResponse.json({ error: "Could not update the pending claim" }, { status: 500 });
+    }
+    return NextResponse.json({ claim: { ...existing, starknetAddress } });
   }
 
   const claim: ClaimRecord = {
