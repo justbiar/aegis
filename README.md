@@ -59,6 +59,41 @@ funds through the STRK20 shielded pool removes that window: the holding
 balance isn't linkable on-chain, and payout to a verified owner is a
 private transfer, not a public, front-runnable one.
 
+## Claim & payout flow
+
+Payout is deliberately **not** automatic — paying a claim the instant it's
+filed would pair a deposit with a withdrawal one-to-one, which is exactly
+the correlation the shielded pool exists to prevent. Claims sit pending and
+get paid out later, batched with others.
+
+```mermaid
+sequenceDiagram
+    participant Owner as Repo owner
+    participant Aegis as Aegis (GitHub OAuth)
+    participant Wallet as Safe wallet (connected)
+    participant Pool as STRK20 shielded pool
+
+    Owner->>Aegis: Sign in with GitHub
+    Aegis->>Aegis: Verify GitHub login == repo owner
+    Owner->>Aegis: Submit Starknet address + tip %
+    Aegis->>Aegis: Claim status: pending
+
+    Note over Wallet,Pool: Later, batched with other pending claims
+    Wallet->>Pool: Private "transfer" action (net amount)
+    Pool-->>Wallet: Transaction hash
+    Wallet->>Aegis: POST /api/claims/pay (txHash, payerAddress)
+    Aegis->>Aegis: Verify tx SUCCEEDED + payer == safe wallet
+    Aegis-->>Owner: Claim status: paid (private, unlinkable)
+```
+
+The address and tip percent can be edited freely while a claim is
+`pending`; once `paid`, the record is immutable. `/api/claims/pay` can't
+verify the private transfer's actual from/to/amount on-chain — privacy
+pool transfers don't expose that — so it only confirms the transaction is
+real, succeeded, and was sent by the configured safe wallet. A forged tx
+hash could only corrupt bookkeeping, never move funds, since nothing
+reaches the claimant without a real wallet-signed transfer.
+
 ## What's actually working right now
 
 - ✅ Live registry scan across every hackathon-registered repo
