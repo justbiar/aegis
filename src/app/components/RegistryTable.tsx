@@ -162,22 +162,21 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
         const clean = results.filter((r) => r.status === "clean").length;
         const scannedCount = results.length;
         const stats = [
-          { label: "Scanned", value: scannedCount, dot: "bg-ls-gray-400" },
-          { label: "Clean", value: clean, dot: "bg-emerald-500" },
-          { label: "Rescued", value: rescued, dot: "bg-emerald-500" },
-          { label: "Exposure", value: exposed, dot: "bg-red-500" },
+          { label: "Scanned", value: scannedCount },
+          { label: "Clean", value: clean },
+          { label: "Rescued", value: rescued },
+          { label: "Exposure", value: exposed },
         ];
         return (
           <div
             aria-live="polite"
             aria-atomic="true"
-            className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 border-b border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50/60 dark:bg-ls-gray-900/30"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-5 py-4 border-b border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50/60 dark:bg-ls-gray-900/30"
           >
             {stats.map((s) => (
-              <div key={s.label} className="flex items-center gap-1.5 text-xs">
-                <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-                <span className="font-bold text-black dark:text-white tabular-nums">{s.value}</span>
-                <span className="text-ls-gray-500 dark:text-ls-gray-400">{s.label}</span>
+              <div key={s.label} className="stat-box bg-white dark:bg-ls-gray-900">
+                <span className="stat-box-label">{s.label}</span>
+                <span className="stat-box-value">{s.value}</span>
               </div>
             ))}
           </div>

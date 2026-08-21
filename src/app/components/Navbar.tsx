@@ -34,7 +34,7 @@ export function Navbar() {
           <div className="flex items-center justify-center w-8 h-8 bg-black dark:bg-white rounded-lg">
             <Shield size={16} className="text-white dark:text-black" />
           </div>
-          <span className="font-bold text-lg tracking-tight text-black dark:text-white">
+          <span className="font-display font-semibold text-lg tracking-tight text-black dark:text-white">
             Aegis
           </span>
         </a>

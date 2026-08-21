@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, Space_Mono } from 'next/font/google'
+import { Inter, Space_Mono, Space_Grotesk } from 'next/font/google'
 import { SessionProvider } from 'next-auth/react'
 import './globals.css'
 
@@ -16,6 +16,15 @@ const spaceMono = Space_Mono({
   variable: '--font-mono-ui',
   display: 'swap',
 })
+// A wider, editorial grotesque used only for large headlines — the rest of
+// the UI stays on the body font so this reads as a deliberate accent, not a
+// full typeface swap.
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  weight: ['500', '600', '700'],
+  variable: '--font-display',
+  display: 'swap',
+})
 
 export const metadata: Metadata = {
   title: 'Aegis',
@@ -30,7 +39,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${spaceMono.variable}`}
+      className={`${inter.variable} ${spaceMono.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
       <body>

@@ -139,10 +139,10 @@ export function ClaimPanel() {
   return (
     <section id="claim" className="py-16 border-y border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50 dark:bg-ls-gray-900/40">
       <div className="section-container max-w-2xl">
-        <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-3">
+        <p className="eyebrow">
           Claim
         </p>
-        <h2 className="text-2xl font-bold text-black dark:text-white mb-3">
+        <h2 className="font-display text-2xl lg:text-3xl font-semibold text-black dark:text-white tracking-tight mb-3">
           Was one of your repos rescued?
         </h2>
         <p className="text-ls-gray-500 dark:text-ls-gray-400 mb-8">
@@ -168,12 +168,12 @@ export function ClaimPanel() {
             {claimable.map((c) => {
               const key = `${c.repoUrl}::${c.network}`;
               return (
-                <div key={key} className="ls-card mb-4 border-l-4 border-l-amber-400 dark:border-l-amber-500">
+                <div key={key} className="ls-card mb-4">
                   <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
                     <div className="min-w-0">
-                      <p className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-amber-600 dark:text-amber-400 mb-1.5">
-                        <Sparkles size={12} /> Ready to claim
-                      </p>
+                      <span className="tag-ready inline-flex items-center gap-1.5 mb-2">
+                        <Sparkles size={11} /> Ready to claim
+                      </span>
                       <p className="font-semibold text-black dark:text-white truncate">
                         {c.repoUrl.replace("https://github.com/", "")}
                       </p>
@@ -255,26 +255,13 @@ export function ClaimPanel() {
                 ((addresses[key] !== undefined && addresses[key] !== c.starknetAddress) ||
                   (tips[key] !== undefined && tips[key] !== c.tipPercent));
               return (
-                <div
-                  key={key}
-                  className={`ls-card mb-4 border-l-4 ${
-                    c.status === "paid"
-                      ? "border-l-emerald-400 dark:border-l-emerald-500"
-                      : "border-l-ls-gray-400 dark:border-l-ls-gray-500"
-                  }`}
-                >
+                <div key={key} className="ls-card mb-4">
                   <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
                     <div className="min-w-0">
-                      <p
-                        className={`flex items-center gap-1.5 text-xs font-bold uppercase tracking-widest mb-1.5 ${
-                          c.status === "paid"
-                            ? "text-emerald-600 dark:text-emerald-400"
-                            : "text-ls-gray-400"
-                        }`}
-                      >
-                        {c.status === "paid" ? <CheckCircle2 size={12} /> : <Clock3 size={12} />}
+                      <span className={c.status === "paid" ? "tag-clean inline-flex items-center gap-1.5 mb-2" : "tag-pending inline-flex items-center gap-1.5 mb-2"}>
+                        {c.status === "paid" ? <CheckCircle2 size={11} /> : <Clock3 size={11} />}
                         {c.status === "paid" ? (c.paidPrivately ? "Paid privately" : "Paid") : "Pending payout"}
-                      </p>
+                      </span>
                       <p className="font-semibold text-black dark:text-white truncate">
                         {c.repoUrl.replace("https://github.com/", "")}
                       </p>

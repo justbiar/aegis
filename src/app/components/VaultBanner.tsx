@@ -67,9 +67,15 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
           <Vault size={compact ? 14 : 18} className="text-white" />
         </div>
         <div className="min-w-0">
-          <p className={`${labelSize} font-bold uppercase tracking-widest text-white/40 flex items-center gap-1.5`}>
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${network === "mainnet" ? "bg-emerald-400" : "bg-amber-400"}`} />
-            Aegis Vault · {label}
+          <p className="flex items-center gap-2 mb-1">
+            <span
+              className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider shrink-0 ${
+                network === "mainnet" ? "bg-emerald-500 text-black" : "bg-amber-500 text-black"
+              }`}
+            >
+              {label}
+            </span>
+            <span className={`${labelSize} font-bold uppercase tracking-widest text-white/40`}>Aegis Vault</span>
           </p>
           {info?.address ? (
             <a

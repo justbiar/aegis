@@ -91,7 +91,7 @@ export default function Page() {
                 STRK20 Private Sprint
               </div>
 
-              <h1 className="text-5xl lg:text-6xl font-bold text-black dark:text-white leading-tight tracking-tight mb-6">
+              <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-black dark:text-white leading-[0.95] tracking-tight mb-6">
                 Whitehat rescue for{" "}
                 <span style={{ color: "var(--pink)" }}>leaked keys</span>
               </h1>
@@ -161,10 +161,10 @@ export default function Page() {
       <section id="how-it-works" className="py-20 bg-ls-gray-50 dark:bg-ls-gray-900/40 border-y border-ls-gray-200 dark:border-ls-gray-800">
         <div className="section-container">
           <div className="text-center mb-12">
-            <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-3">
+            <p className="eyebrow">
               How it works
             </p>
-            <h2 className="text-3xl font-bold text-black dark:text-white">
+            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-black dark:text-white tracking-tight">
               Three steps, no human in the loop
             </h2>
           </div>
@@ -204,7 +204,7 @@ export default function Page() {
                 </div>
                 <span className="text-white font-bold text-lg">Why it needs privacy</span>
               </div>
-              <p className="text-xl lg:text-2xl font-medium text-white/90 leading-relaxed">
+              <p className="font-display text-xl lg:text-2xl font-medium text-white/90 leading-relaxed">
                 A sweep-and-return service is only as safe as its own holding
                 address. A transparent wallet is a target — anyone watching the
                 mempool can front-run the rescue or drain it the moment it's
@@ -256,10 +256,10 @@ export default function Page() {
       <section id="registry" className="py-24">
         <div className="section-container">
           <div className="text-center mb-12">
-            <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-3">
+            <p className="eyebrow">
               Coverage
             </p>
-            <h2 className="text-3xl font-bold text-black dark:text-white mb-3">
+            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-black dark:text-white tracking-tight mb-3">
               Watching the sprint's own registry
             </h2>
             <p className="text-ls-gray-500 dark:text-ls-gray-400 max-w-xl mx-auto">

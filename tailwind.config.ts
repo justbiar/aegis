@@ -10,6 +10,7 @@ const config: Config = {
       fontFamily: {
         sans: ["Montserrat", "system-ui", "sans-serif"],
         mono: ["JetBrains Mono", "Fira Code", "Courier New", "monospace"],
+        display: ["var(--font-display)", "Montserrat", "system-ui", "sans-serif"],
       },
       colors: {
         ls: {
