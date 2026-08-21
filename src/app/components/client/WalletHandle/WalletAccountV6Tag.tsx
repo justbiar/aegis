@@ -613,46 +613,49 @@ export default function WalletAccountV6Tag() {
         </div>
       )}
 
-      {/* Pending claims - one private "transfer" action per claim */}
-      {tab === "pay" && (
-        <div className={styles.inputBlock}>
-          <div className={styles.inputLabel}>Pending claims ({pendingClaims.length})</div>
-          {pendingClaims.length === 0 ? (
-            <div className={styles.subLine}>
-              <span>Nothing pending right now.</span>
-            </div>
-          ) : (
-            pendingClaims.map((c) => {
-              const key = `${c.repoUrl}::${c.network}`;
-              const result = payResults[key];
-              const networkMatches = networkName?.toLowerCase() === c.network;
-              return (
-                <div key={key} style={{ marginTop: 12 }}>
-                  <div className={styles.subLine}>
-                    <span>
-                      {c.repoUrl.replace("https://github.com/", "")} · {c.network} · {fmtStrk(BigInt(Math.round(c.amount * 1e18)))} STRK
-                    </span>
-                    <span className={styles.subMono}>{shortHex(c.starknetAddress)}</span>
-                  </div>
-                  {!networkMatches && (
-                    <div className={styles.warn}>
-                      This claim is on {c.network} - switch your wallet's network to pay it (currently {networkName ?? "unsupported"}).
+      {/* Pending claims - one private "transfer" action per claim. Only
+          claims on whichever network the wallet is currently connected to -
+          a claim on the other network just isn't shown here until you
+          switch. */}
+      {tab === "pay" && (() => {
+        const visibleClaims = pendingClaims.filter((c) => c.network === networkName?.toLowerCase());
+        return (
+          <div className={styles.inputBlock}>
+            <div className={styles.inputLabel}>Pending claims on {networkName ?? "this network"} ({visibleClaims.length})</div>
+            {visibleClaims.length === 0 ? (
+              <div className={styles.subLine}>
+                <span>
+                  Nothing pending on {networkName ?? "this network"}
+                  {pendingClaims.length > visibleClaims.length ? " - switch network to see the rest." : "."}
+                </span>
+              </div>
+            ) : (
+              visibleClaims.map((c) => {
+                const key = `${c.repoUrl}::${c.network}`;
+                const result = payResults[key];
+                return (
+                  <div key={key} style={{ marginTop: 12 }}>
+                    <div className={styles.subLine}>
+                      <span>
+                        {c.repoUrl.replace("https://github.com/", "")} · {fmtStrk(BigInt(Math.round(c.amount * 1e18)))} STRK
+                      </span>
+                      <span className={styles.subMono}>{shortHex(c.starknetAddress)}</span>
                     </div>
-                  )}
-                  <button
-                    className={`${styles.btn} ${styles.btnGreen} ${styles.btnBlock}`}
-                    disabled={!isConnected || !networkMatches || payingKey === key}
-                    onClick={() => handlePayClaim(c)}
-                  >
-                    {payingKey === key ? "Sending private transfer…" : `Pay ${c.amount.toFixed(4)} STRK privately`}
-                  </button>
-                  {result ? <ResultCard r={result} /> : null}
-                </div>
-              );
-            })
-          )}
-        </div>
-      )}
+                    <button
+                      className={`${styles.btn} ${styles.btnGreen} ${styles.btnBlock}`}
+                      disabled={!isConnected || payingKey === key}
+                      onClick={() => handlePayClaim(c)}
+                    >
+                      {payingKey === key ? "Sending private transfer…" : `Pay ${c.amount.toFixed(4)} STRK privately`}
+                    </button>
+                    {result ? <ResultCard r={result} /> : null}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        );
+      })()}
 
       {/* Info / network row */}
       <div className={styles.feeRow}>
