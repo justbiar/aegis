@@ -171,7 +171,7 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
           <div
             aria-live="polite"
             aria-atomic="true"
-            className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-5 py-4 border-b border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50/60 dark:bg-ls-gray-900/30"
+            className="grid grid-cols-2 sm:grid-cols-4 gap-2 px-5 py-4 border-b border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50/60 dark:bg-ls-gray-950"
           >
             {stats.map((s) => (
               <div key={s.label} className="stat-box bg-white dark:bg-ls-gray-900">

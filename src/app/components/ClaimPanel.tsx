@@ -137,7 +137,7 @@ export function ClaimPanel() {
   };
 
   return (
-    <section id="claim" className="py-16 border-y border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50 dark:bg-ls-gray-900/40">
+    <section id="claim" className="py-16 border-y border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50 dark:bg-ls-gray-950">
       <div className="section-container max-w-2xl">
         <p className="eyebrow">
           Claim

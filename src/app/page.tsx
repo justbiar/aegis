@@ -158,7 +158,7 @@ export default function Page() {
       <ClaimPanel />
 
       {/* ── HOW IT WORKS ────────────────────────────────────────────────── */}
-      <section id="how-it-works" className="py-20 bg-ls-gray-50 dark:bg-ls-gray-900/40 border-y border-ls-gray-200 dark:border-ls-gray-800">
+      <section id="how-it-works" className="py-20 bg-ls-gray-50 dark:bg-ls-gray-950 border-y border-ls-gray-200 dark:border-ls-gray-800">
         <div className="section-container">
           <div className="text-center mb-12">
             <p className="eyebrow">
