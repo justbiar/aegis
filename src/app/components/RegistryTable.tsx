@@ -1,9 +1,70 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ExternalLink, RefreshCw, Loader2, ScanSearch } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { ExternalLink, RefreshCw, Loader2, ScanSearch, CheckCircle2, ShieldAlert, AlertTriangle, CircleDashed, Info, ChevronDown } from "lucide-react";
 import type { RegistryEntry } from "@/lib/registry";
 import type { ScanResult } from "@/lib/scan";
+
+// Shared status badge, used by both the desktop table and the mobile card
+// list so the two layouts never drift out of sync visually.
+function StatusBadge({ entry, result, scanning }: { entry: RegistryEntry; result?: ScanResult; scanning: boolean }) {
+  if (!result) {
+    return (
+      <span className="tag-pending flex items-center gap-1 w-fit">
+        {scanning ? <Loader2 size={11} className="animate-spin" /> : <CircleDashed size={11} />}
+        {scanning ? "Scanning…" : "Not scanned yet"}
+      </span>
+    );
+  }
+  if (result.status === "clean") {
+    return (
+      <span className="tag-clean flex items-center gap-1 w-fit">
+        <CheckCircle2 size={11} /> Clean
+      </span>
+    );
+  }
+  if (result.status === "error") {
+    return (
+      <span className="tag-error flex items-center gap-1 w-fit">
+        <AlertTriangle size={11} /> Scan error
+      </span>
+    );
+  }
+  if (result.status === "info") {
+    return (
+      <span
+        className="tag-pending flex items-center gap-1 w-fit"
+        title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
+      >
+        <Info size={11} /> Key found, no impact
+      </span>
+    );
+  }
+  // result.status === "leak"
+  const rescued = result.findings.find((f) => f.rescueTxHash);
+  const explorer = rescued?.network === "mainnet"
+    ? "https://voyager.online/tx/"
+    : "https://sepolia.voyager.online/tx/";
+  return rescued ? (
+    <a
+      href={`${explorer}${rescued.rescueTxHash}`}
+      target="_blank"
+      rel="noreferrer"
+      className="tag-clean flex items-center gap-1 w-fit"
+      title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
+    >
+      <CheckCircle2 size={11} /> Rescued
+    </a>
+  ) : (
+    <span
+      className="tag-leak flex items-center gap-1 w-fit"
+      title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
+    >
+      <ShieldAlert size={11} /> Exposure ({result.findings.length})
+    </span>
+  );
+}
 
 interface RegistryTableProps {
   onResults?: (results: ScanResult[]) => void;
@@ -15,6 +76,9 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
   const [error, setError] = useState("");
   const [scanResults, setScanResults] = useState<Record<string, ScanResult>>({});
   const [scanning, setScanning] = useState(false);
+  // Collapsed by default — the full 60+ project list otherwise dominates the
+  // page; the stats strip above already gives the at-a-glance summary.
+  const [expanded, setExpanded] = useState(false);
 
   const load = async (): Promise<RegistryEntry[]> => {
     setLoading(true);
@@ -91,90 +155,142 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
         </div>
       </div>
 
+      {!error && entries.length > 0 && (() => {
+        const results = Object.values(scanResults);
+        const rescued = results.filter((r) => r.status === "leak" && r.findings.some((f) => f.rescueTxHash)).length;
+        const exposed = results.filter((r) => r.status === "leak" && !r.findings.some((f) => f.rescueTxHash)).length;
+        const clean = results.filter((r) => r.status === "clean").length;
+        const scannedCount = results.length;
+        const stats = [
+          { label: "Scanned", value: scannedCount, dot: "bg-ls-gray-400" },
+          { label: "Clean", value: clean, dot: "bg-emerald-500" },
+          { label: "Rescued", value: rescued, dot: "bg-emerald-500" },
+          { label: "Exposure", value: exposed, dot: "bg-red-500" },
+        ];
+        return (
+          <div
+            aria-live="polite"
+            aria-atomic="true"
+            className="flex flex-wrap items-center gap-x-6 gap-y-2 px-5 py-3 border-b border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50/60 dark:bg-ls-gray-900/30"
+          >
+            {stats.map((s) => (
+              <div key={s.label} className="flex items-center gap-1.5 text-xs">
+                <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                <span className="font-bold text-black dark:text-white tabular-nums">{s.value}</span>
+                <span className="text-ls-gray-500 dark:text-ls-gray-400">{s.label}</span>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {error ? (
         <p className="px-5 py-6 text-sm text-red-600 dark:text-red-400">{error}</p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="ls-table w-full">
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>Category</th>
-                <th>Repo</th>
-                <th>Scan status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {entries.map((e) => {
-                const result = scanResults[e.repo_url];
-                return (
-                  <tr key={e.repo_url}>
-                    <td className="font-semibold text-black dark:text-white">
-                      {e.name ?? e.repo_url.split("/").pop()}
-                    </td>
-                    <td className="text-ls-gray-500 dark:text-ls-gray-400">
-                      {e.category ?? "Other"}
-                    </td>
-                    <td>
-                      <a
-                        href={e.repo_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="link-arrow text-xs"
-                      >
-                        Repo <ExternalLink size={11} />
-                      </a>
-                    </td>
-                    <td>
-                      {!result && (
-                        <span className="tag-pending">
-                          {scanning ? "Scanning…" : "Not scanned yet"}
-                        </span>
-                      )}
-                      {result?.status === "clean" && <span className="tag-clean">Clean</span>}
-                      {result?.status === "error" && <span className="tag-error">Scan error</span>}
-                      {result?.status === "info" && (
-                        <span
-                          className="tag-pending"
-                          title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
-                        >
-                          Key found, no impact
-                        </span>
-                      )}
-                      {result?.status === "leak" && (() => {
-                        const rescued = result.findings.find((f) => f.rescueTxHash);
-                        const explorer = rescued?.network === "mainnet"
-                          ? "https://voyager.online/tx/"
-                          : "https://sepolia.voyager.online/tx/";
-                        return rescued ? (
+        <>
+          <AnimatePresence initial={false}>
+            {expanded && (
+              <motion.div
+                key="registry-list"
+                id="registry-list"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: "auto", opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: "easeInOut" }}
+                className="overflow-hidden"
+              >
+                {/* Desktop / wide layout: a real table, no horizontal scroll needed above sm. */}
+                <div className="hidden sm:block overflow-x-auto">
+                  <table className="ls-table w-full">
+                    <thead>
+                      <tr>
+                        <th>Project</th>
+                        <th>Category</th>
+                        <th>Repo</th>
+                        <th>Scan status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {entries.map((e) => {
+                        const result = scanResults[e.repo_url];
+                        return (
+                          <tr key={e.repo_url}>
+                            <td className="font-semibold text-black dark:text-white">
+                              {e.name ?? e.repo_url.split("/").pop()}
+                            </td>
+                            <td className="text-ls-gray-500 dark:text-ls-gray-400">
+                              {e.category ?? "Other"}
+                            </td>
+                            <td>
+                              <a
+                                href={e.repo_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="link-arrow text-xs"
+                              >
+                                Repo <ExternalLink size={11} />
+                              </a>
+                            </td>
+                            <td>
+                              <StatusBadge entry={e} result={result} scanning={scanning} />
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile layout: stacked cards instead of a horizontally-scrolling table. */}
+                <div className="sm:hidden divide-y divide-ls-gray-100 dark:divide-ls-gray-800">
+                  {entries.map((e) => {
+                    const result = scanResults[e.repo_url];
+                    return (
+                      <div key={e.repo_url} className="px-5 py-4 flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-semibold text-black dark:text-white truncate">
+                            {e.name ?? e.repo_url.split("/").pop()}
+                          </p>
+                          <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 mb-2">
+                            {e.category ?? "Other"}
+                          </p>
                           <a
-                            href={`${explorer}${rescued.rescueTxHash}`}
+                            href={e.repo_url}
                             target="_blank"
                             rel="noreferrer"
-                            className="tag-clean"
-                            title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
+                            className="link-arrow text-xs"
                           >
-                            ✓ Rescued
+                            Repo <ExternalLink size={11} />
                           </a>
-                        ) : (
-                          <span
-                            className="tag-leak"
-                            title={result.findings.map((f) => `${f.file}: ${f.detail}`).join("\n")}
-                          >
-                            ⚠ Exposure ({result.findings.length})
-                          </span>
-                        );
-                      })()}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                        </div>
+                        <div className="shrink-0">
+                          <StatusBadge entry={e} result={result} scanning={scanning} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {loading && entries.length === 0 && (
             <p className="px-5 py-8 text-center text-sm text-ls-gray-400">Loading registry…</p>
           )}
-        </div>
+
+          {entries.length > 0 && (
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+              aria-controls="registry-list"
+              className="w-full flex items-center justify-center gap-1.5 px-5 py-3.5 text-sm font-semibold
+                text-black dark:text-white hover:bg-ls-gray-50 dark:hover:bg-ls-gray-900/60 transition-colors"
+            >
+              {expanded ? "Hide project list" : `Show all ${entries.length} projects`}
+              <ChevronDown size={15} className={`transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} />
+            </button>
+          )}
+        </>
       )}
     </div>
   );
