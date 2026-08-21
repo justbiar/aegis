@@ -11,6 +11,17 @@ import PayClaimInline from "./client/WalletHandle/PayClaimInline";
 
 const DEFAULT_TIP_PERCENT = 2;
 
+// Starknet addresses can differ in string form (leading zeros) while being
+// the same value, so compare as BigInt rather than string equality.
+function sameAddress(a?: string | null, b?: string | null): boolean {
+  if (!a || !b) return false;
+  try {
+    return BigInt(a) === BigInt(b);
+  } catch {
+    return false;
+  }
+}
+
 interface Claimable {
   repoUrl: string;
   network: "mainnet" | "sepolia";
@@ -70,6 +81,26 @@ export function ClaimPanel() {
   const [tips, setTips] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<Record<string, string>>({});
+  const [safeAddresses, setSafeAddresses] = useState<Record<"mainnet" | "sepolia", string | null>>({
+    mainnet: null,
+    sepolia: null,
+  });
+
+  useEffect(() => {
+    fetch("/api/vault")
+      .then((r) => r.json())
+      .then((d) => setSafeAddresses({ mainnet: d.mainnet?.address ?? null, sepolia: d.sepolia?.address ?? null }))
+      .catch(() => {});
+  }, []);
+
+  // Paying out a claim is a safe-wallet-operator action, not something a
+  // random visitor's own wallet can do - it needs to actually be the wallet
+  // holding the rescued funds. Gate the pay UI on that instead of just
+  // "some wallet is connected", so a claimant connecting their own wallet
+  // sees why nothing happens instead of a button that just fails.
+  const walletNetworkKey = walletNetworkName?.toLowerCase() as "mainnet" | "sepolia" | undefined;
+  const isSafeWallet =
+    isWalletConnected && !!walletNetworkKey && sameAddress(walletAddress, safeAddresses[walletNetworkKey]);
 
   const load = () => {
     fetch("/api/claims?scope=mine")
@@ -218,16 +249,20 @@ export function ClaimPanel() {
             {claims.some((c) => c.status === "pending") && (
               <div
                 className={`ls-card mb-4 flex items-center justify-between gap-3 ${
-                  isWalletConnected
+                  isSafeWallet
                     ? "border-emerald-200 dark:border-emerald-800/60"
+                    : isWalletConnected
+                    ? "border-amber-200 dark:border-amber-800/60"
                     : "border-dashed"
                 }`}
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div
                     className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                      isWalletConnected
+                      isSafeWallet
                         ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
+                        : isWalletConnected
+                        ? "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
                         : "bg-ls-gray-100 text-ls-gray-400 dark:bg-ls-gray-800 dark:text-ls-gray-500"
                     }`}
                   >
@@ -235,12 +270,14 @@ export function ClaimPanel() {
                   </div>
                   <div className="min-w-0">
                     <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-0.5">
-                      Safe wallet
+                      Safe wallet only
                     </p>
                     <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400 truncate">
-                      {isWalletConnected
-                        ? `Connected · ${walletNetworkName ?? "unsupported network"} · ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`
-                        : "Connect it to pay out pending claims privately, right from the card below."}
+                      {isSafeWallet
+                        ? `Connected as the safe wallet · ${walletNetworkName} · ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`
+                        : isWalletConnected
+                        ? `This wallet (${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}) isn't the Aegis safe wallet — paying out is disabled until the safe wallet itself connects.`
+                        : "Paying out a claim is done by whoever holds the Aegis safe wallet's key — not the claimant's own wallet. Connect it here to pay the pending claims below."}
                     </p>
                   </div>
                 </div>
@@ -323,6 +360,7 @@ export function ClaimPanel() {
                           amount={c.amount}
                           tipPercent={c.tipPercent}
                           starknetAddress={c.starknetAddress}
+                          isSafeWallet={isSafeWallet}
                           onPaid={load}
                         />
                       )}

@@ -15,6 +15,7 @@ interface Props {
   amount: number;
   tipPercent: number;
   starknetAddress: string;
+  isSafeWallet: boolean;
   onPaid: () => void;
 }
 
@@ -30,7 +31,7 @@ type Status =
 // connecting once (from the bar above the claim list) lights this button up
 // on every pending claim at once, instead of a separate "pay" surface
 // showing the same claims again in a different layout.
-export default function PayClaimInline({ repoUrl, network, amount, tipPercent, starknetAddress, onPaid }: Props) {
+export default function PayClaimInline({ repoUrl, network, amount, tipPercent, starknetAddress, isSafeWallet, onPaid }: Props) {
   const myWalletAccount = useStoreWallet((s) => s.myWalletAccount);
   const connectedAddress = useStoreWallet((s) => s.address);
   const isConnected = useStoreWallet((s) => s.isConnected);
@@ -111,6 +112,11 @@ export default function PayClaimInline({ repoUrl, network, amount, tipPercent, s
       {!isConnected ? (
         <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
           Connect the safe wallet above to pay this out privately.
+        </p>
+      ) : !isSafeWallet ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Connected wallet isn't the Aegis safe wallet — only whoever holds
+          its key can pay this out.
         </p>
       ) : !networkMatches ? (
         <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
