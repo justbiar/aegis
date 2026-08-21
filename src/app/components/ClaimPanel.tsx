@@ -3,7 +3,11 @@
 import { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 import { ExternalLink, Loader2, KeyRound } from "lucide-react";
-import WalletAccountV6Tag from "./client/WalletHandle/WalletAccountV6Tag";
+import * as constants from "@/utils/constants";
+import { useStoreWallet } from "./Wallet/walletContext";
+import { useFrontendProvider } from "./client/provider/providerContext";
+import SelectWallet from "./client/WalletHandle/SelectWallet";
+import PayClaimInline from "./client/WalletHandle/PayClaimInline";
 
 const DEFAULT_TIP_PERCENT = 2;
 
@@ -47,6 +51,10 @@ function TipSlider({ value, onChange }: { value: number; onChange: (v: number) =
 
 export function ClaimPanel() {
   const { data: session, status } = useSession();
+  const isWalletConnected = useStoreWallet((s) => s.isConnected);
+  const walletAddress = useStoreWallet((s) => s.address);
+  const myFrontendProviderIndex = useFrontendProvider((s) => s.currentFrontendProviderIndex);
+  const walletNetworkName = constants.Strk20Networks[myFrontendProviderIndex];
   const [claimable, setClaimable] = useState<Claimable[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [addresses, setAddresses] = useState<Record<string, string>>({});
@@ -188,8 +196,28 @@ export function ClaimPanel() {
               );
             })}
 
+            {claims.some((c) => c.status === "pending") && (
+              <div className="ls-card mb-4 flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-1">
+                    Safe wallet
+                  </p>
+                  <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
+                    {isWalletConnected
+                      ? `Connected · ${walletNetworkName ?? "unsupported network"} · ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`
+                      : "Connect it to pay out pending claims privately, right from the card below."}
+                  </p>
+                </div>
+                <SelectWallet variant="nav" />
+              </div>
+            )}
+
             {claims.map((c) => {
               const key = `${c.repoUrl}::${c.network}`;
+              const hasUnsavedEdits =
+                c.status === "pending" &&
+                ((addresses[key] !== undefined && addresses[key] !== c.starknetAddress) ||
+                  (tips[key] !== undefined && tips[key] !== c.tipPercent));
               return (
                 <div key={key} className="ls-card mb-4">
                   <div className="flex items-center justify-between gap-4 mb-3">
@@ -241,6 +269,20 @@ export function ClaimPanel() {
                         onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
                       />
                       {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
+                      {hasUnsavedEdits ? (
+                        <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 mt-3">
+                          Click Update to save these changes before paying.
+                        </p>
+                      ) : (
+                        <PayClaimInline
+                          repoUrl={c.repoUrl}
+                          network={c.network}
+                          amount={c.amount}
+                          tipPercent={c.tipPercent}
+                          starknetAddress={c.starknetAddress}
+                          onPaid={load}
+                        />
+                      )}
                     </>
                   )}
                 </div>
@@ -248,19 +290,6 @@ export function ClaimPanel() {
             })}
           </>
         )}
-
-        <div className="mt-12 pt-8 border-t border-ls-gray-200 dark:border-ls-gray-800">
-          <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-1">
-            Pay a claim
-          </p>
-          <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400 mb-6">
-            Connect the safe wallet here to shield its balance and pay out
-            pending claims privately.
-          </p>
-          <div className="max-w-md">
-            <WalletAccountV6Tag onlyPay onClaimPaid={load} />
-          </div>
-        </div>
       </div>
     </section>
   );
