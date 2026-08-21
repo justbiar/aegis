@@ -625,6 +625,7 @@ export default function WalletAccountV6Tag() {
             pendingClaims.map((c) => {
               const key = `${c.repoUrl}::${c.network}`;
               const result = payResults[key];
+              const networkMatches = networkName?.toLowerCase() === c.network;
               return (
                 <div key={key} style={{ marginTop: 12 }}>
                   <div className={styles.subLine}>
@@ -633,9 +634,14 @@ export default function WalletAccountV6Tag() {
                     </span>
                     <span className={styles.subMono}>{shortHex(c.starknetAddress)}</span>
                   </div>
+                  {!networkMatches && (
+                    <div className={styles.warn}>
+                      This claim is on {c.network} - switch your wallet's network to pay it (currently {networkName ?? "unsupported"}).
+                    </div>
+                  )}
                   <button
                     className={`${styles.btn} ${styles.btnGreen} ${styles.btnBlock}`}
-                    disabled={!isConnected || !isStrk20Network || payingKey === key}
+                    disabled={!isConnected || !networkMatches || payingKey === key}
                     onClick={() => handlePayClaim(c)}
                   >
                     {payingKey === key ? "Sending private transfer…" : `Pay ${c.amount.toFixed(4)} STRK privately`}

@@ -142,6 +142,8 @@ export default function Page() {
         </div>
       </section>
 
+      <ClaimPanel />
+
       {/* ── HOW IT WORKS ────────────────────────────────────────────────── */}
       <section id="how-it-works" className="py-20 bg-ls-gray-50 dark:bg-ls-gray-900/40 border-y border-ls-gray-200 dark:border-ls-gray-800">
         <div className="section-container">
@@ -218,8 +220,6 @@ export default function Page() {
           <RegistryTable onResults={handleScanResults} />
         </div>
       </section>
-
-      <ClaimPanel />
 
       {/* ── FOOTER ──────────────────────────────────────────────────────── */}
       <footer className="bg-black dark:bg-ls-gray-950 border-t border-ls-gray-900">

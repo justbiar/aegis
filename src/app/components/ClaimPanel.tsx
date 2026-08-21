@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 import { ExternalLink, Loader2, KeyRound } from "lucide-react";
+import WalletAccountV6Tag from "./client/WalletHandle/WalletAccountV6Tag";
 
 interface Claimable {
   repoUrl: string;
@@ -157,6 +158,19 @@ export function ClaimPanel() {
             ))}
           </>
         )}
+
+        <div className="mt-12 pt-8 border-t border-ls-gray-200 dark:border-ls-gray-800">
+          <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-1">
+            Pay a claim
+          </p>
+          <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400 mb-6">
+            Connect the safe wallet here to shield its balance and pay out
+            pending claims privately.
+          </p>
+          <div className="max-w-md">
+            <WalletAccountV6Tag />
+          </div>
+        </div>
       </div>
     </section>
   );
