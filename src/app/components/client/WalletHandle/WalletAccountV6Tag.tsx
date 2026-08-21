@@ -246,7 +246,7 @@ export default function WalletAccountV6Tag({ onlyPay = false }: WalletAccountV6T
       if (/NOT_REGISTERED/i.test(msg)) {
         setResult(
           errorResult(
-            "This account isn't registered with the pool yet. Registration should happen automatically the first time your wallet shields something - open your wallet's own Shield/Privacy feature directly (not through this site) and shield a small amount there once, then come back and try again."
+            "Either the connected wallet or the recipient address isn't registered with the pool yet - registering needs a real Shield done from that account's own wallet (not through this site), even for the recipient of a private transfer, since the pool needs their published viewing key to encrypt a note to them. Register whichever side is missing it, then try again."
           )
         );
       } else {
