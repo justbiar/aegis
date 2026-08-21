@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
+import { useSession, signIn } from "next-auth/react";
 import { ShieldCheck, ScanSearch, Lock, KeyRound, ExternalLink } from "lucide-react";
 import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
@@ -31,6 +32,7 @@ const STEPS = [
 ];
 
 export default function Page() {
+  const { status: authStatus } = useSession();
   const [rescuedCount, setRescuedCount] = useState(0);
   const [rescuedTotal, setRescuedTotal] = useState(0);
   const [rescuedCountMainnet, setRescuedCountMainnet] = useState(0);
@@ -98,7 +100,20 @@ export default function Page() {
             </p>
 
             <div className="flex flex-wrap items-center gap-4">
-              <a href="#registry" className="btn-primary text-base px-8 py-3.5">
+              {authStatus === "authenticated" ? (
+                <a href="#claim" className="btn-primary text-base px-8 py-3.5">
+                  <KeyRound size={16} /> Check your claim
+                </a>
+              ) : (
+                <button
+                  onClick={() => signIn("github")}
+                  disabled={authStatus === "loading"}
+                  className="btn-primary text-base px-8 py-3.5 disabled:opacity-50"
+                >
+                  <KeyRound size={16} /> Connect GitHub
+                </button>
+              )}
+              <a href="#registry" className="btn-ghost text-base px-8 py-3.5">
                 See it in action →
               </a>
               <a
