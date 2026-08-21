@@ -5,6 +5,8 @@ import { useSession, signIn } from "next-auth/react";
 import { ExternalLink, Loader2, KeyRound } from "lucide-react";
 import WalletAccountV6Tag from "./client/WalletHandle/WalletAccountV6Tag";
 
+const DEFAULT_TIP_PERCENT = 2;
+
 interface Claimable {
   repoUrl: string;
   network: "mainnet" | "sepolia";
@@ -17,8 +19,30 @@ interface Claim {
   amount: number;
   status: "pending" | "paid";
   starknetAddress: string;
+  tipPercent: number;
   paidTxHash?: string;
   paidPrivately?: boolean;
+}
+
+function TipSlider({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+  const net = (100 - value).toFixed(1);
+  return (
+    <div className="flex-1 min-w-[220px]">
+      <div className="flex items-center justify-between text-xs text-ls-gray-500 dark:text-ls-gray-400 mb-1">
+        <span>Leave {value}% to cover the payout's network fee and support Aegis</span>
+        <span className="font-semibold">{net}% to you</span>
+      </div>
+      <input
+        type="range"
+        min={0}
+        max={100}
+        step={0.5}
+        value={value}
+        onChange={(e) => onChange(Number(e.target.value))}
+        className="w-full accent-black dark:accent-white"
+      />
+    </div>
+  );
 }
 
 export function ClaimPanel() {
@@ -26,6 +50,7 @@ export function ClaimPanel() {
   const [claimable, setClaimable] = useState<Claimable[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [addresses, setAddresses] = useState<Record<string, string>>({});
+  const [tips, setTips] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<Record<string, string>>({});
 
@@ -43,14 +68,22 @@ export function ClaimPanel() {
     if (status === "authenticated") load();
   }, [status]);
 
-  // Seed the address inputs for pending claims with their current value,
-  // so editing shows what's there instead of an empty box.
+  // Seed the address/tip inputs for pending claims with their current
+  // values, so editing shows what's there instead of resetting to defaults.
   useEffect(() => {
     setAddresses((a) => {
       const next = { ...a };
       for (const c of claims) {
         const key = `${c.repoUrl}::${c.network}`;
         if (c.status === "pending" && next[key] === undefined) next[key] = c.starknetAddress;
+      }
+      return next;
+    });
+    setTips((t) => {
+      const next = { ...t };
+      for (const c of claims) {
+        const key = `${c.repoUrl}::${c.network}`;
+        if (c.status === "pending" && next[key] === undefined) next[key] = c.tipPercent;
       }
       return next;
     });
@@ -69,7 +102,12 @@ export function ClaimPanel() {
       const res = await fetch("/api/claims", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ repoUrl, network, starknetAddress }),
+        body: JSON.stringify({
+          repoUrl,
+          network,
+          starknetAddress,
+          tipPercent: tips[key] ?? DEFAULT_TIP_PERCENT,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit claim");
@@ -124,7 +162,7 @@ export function ClaimPanel() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-col sm:flex-row gap-2">
+                  <div className="flex flex-col sm:flex-row gap-2 mb-3">
                     <input
                       type="text"
                       placeholder="Your Starknet address, registered with the pool (paid out as a private transfer)"
@@ -141,6 +179,10 @@ export function ClaimPanel() {
                       {submitting === key ? <Loader2 size={14} className="animate-spin" /> : "Claim"}
                     </button>
                   </div>
+                  <TipSlider
+                    value={tips[key] ?? DEFAULT_TIP_PERCENT}
+                    onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
+                  />
                   {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
                 </div>
               );
@@ -174,7 +216,7 @@ export function ClaimPanel() {
                   </div>
                   {c.status === "pending" && (
                     <>
-                      <div className="flex flex-col sm:flex-row gap-2">
+                      <div className="flex flex-col sm:flex-row gap-2 mb-3">
                         <input
                           type="text"
                           placeholder="Starknet address to receive this"
@@ -185,12 +227,19 @@ export function ClaimPanel() {
                         />
                         <button
                           onClick={() => submit(c.repoUrl, c.network)}
-                          disabled={submitting === key || addresses[key] === c.starknetAddress}
+                          disabled={
+                            submitting === key ||
+                            (addresses[key] === c.starknetAddress && tips[key] === c.tipPercent)
+                          }
                           className="btn-ghost text-sm px-5 py-2 whitespace-nowrap disabled:opacity-50"
                         >
-                          {submitting === key ? <Loader2 size={14} className="animate-spin" /> : "Update address"}
+                          {submitting === key ? <Loader2 size={14} className="animate-spin" /> : "Update"}
                         </button>
                       </div>
+                      <TipSlider
+                        value={tips[key] ?? c.tipPercent}
+                        onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
+                      />
                       {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
                     </>
                   )}

@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getLedger } from "@/lib/ledger";
-import { getClaims, recordClaimRequest, updatePendingClaimAddress, type ClaimRecord } from "@/lib/claims";
+import { getClaims, recordClaimRequest, updatePendingClaim, type ClaimRecord } from "@/lib/claims";
+
+const DEFAULT_TIP_PERCENT = 2;
+
+function clampTipPercent(raw: unknown): number {
+  const n = typeof raw === "number" ? raw : DEFAULT_TIP_PERCENT;
+  if (!Number.isFinite(n)) return DEFAULT_TIP_PERCENT;
+  return Math.min(100, Math.max(0, n));
+}
 import type { Network } from "@/lib/networks";
 
 function repoOwner(repoUrl: string): string | null {
@@ -72,6 +80,7 @@ export async function POST(req: NextRequest) {
   const repoUrl = body?.repoUrl as string | undefined;
   const network = body?.network as Network | undefined;
   const starknetAddress = body?.starknetAddress as string | undefined;
+  const tipPercent = clampTipPercent(body?.tipPercent);
   if (!repoUrl || !network || !starknetAddress) {
     return NextResponse.json({ error: "repoUrl, network and starknetAddress are required" }, { status: 400 });
   }
@@ -93,13 +102,14 @@ export async function POST(req: NextRequest) {
     if (existing.status === "paid") {
       return NextResponse.json({ error: "Already paid out" }, { status: 409 });
     }
-    // Still pending — let them correct the address (wrong wallet, changed
-    // their mind) rather than getting stuck with the first one they typed.
-    const updated = await updatePendingClaimAddress(repoUrl, network, login, starknetAddress);
+    // Still pending — let them correct the address or tip (wrong wallet,
+    // changed their mind) rather than getting stuck with the first values
+    // they picked.
+    const updated = await updatePendingClaim(repoUrl, network, login, { starknetAddress, tipPercent });
     if (!updated) {
       return NextResponse.json({ error: "Could not update the pending claim" }, { status: 500 });
     }
-    return NextResponse.json({ claim: { ...existing, starknetAddress } });
+    return NextResponse.json({ claim: { ...existing, starknetAddress, tipPercent } });
   }
 
   const claim: ClaimRecord = {
@@ -110,6 +120,7 @@ export async function POST(req: NextRequest) {
     network,
     status: "pending",
     requestedAt: Date.now(),
+    tipPercent,
   };
   await recordClaimRequest(claim);
   return NextResponse.json({ claim });

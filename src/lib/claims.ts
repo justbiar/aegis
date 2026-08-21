@@ -27,6 +27,11 @@ export interface ClaimRecord {
   // = the automatic plain payout in payout.ts. Both leave the recipient
   // with the same STRK, just with different on-chain visibility.
   paidPrivately?: boolean;
+  // % of `amount` withheld at payout time (stays with the safe wallet) —
+  // covers the network fee the payout itself costs to send, and doubles as
+  // an opt-in "support the project" amount above that. Chosen by the
+  // claimant, 0-100, defaults to 2.
+  tipPercent: number;
 }
 
 export const claimsAvailable = Boolean(KV_URL && KV_TOKEN);
@@ -72,14 +77,15 @@ export async function recordClaimRequest(claim: ClaimRecord): Promise<void> {
   }
 }
 
-// Lets a claimant change the destination address while it's still pending —
-// mistyped address, or just changed their mind about which wallet should
-// receive it. Once paid, a claim is immutable (nothing to update).
-export async function updatePendingClaimAddress(
+// Lets a claimant change the destination address or tip percentage while
+// still pending — mistyped address, changed their mind about the wallet,
+// or want to adjust how much they're leaving behind. Once paid, a claim is
+// immutable (nothing to update).
+export async function updatePendingClaim(
   repoUrl: string,
   network: Network,
   githubLogin: string,
-  starknetAddress: string,
+  updates: { starknetAddress: string; tipPercent: number },
 ): Promise<boolean> {
   const claims = await getClaims();
   const claim = claims.find(
@@ -90,7 +96,8 @@ export async function updatePendingClaimAddress(
       c.status === "pending",
   );
   if (!claim) return false;
-  claim.starknetAddress = starknetAddress;
+  claim.starknetAddress = updates.starknetAddress;
+  claim.tipPercent = updates.tipPercent;
   await saveClaims(claims);
   return true;
 }

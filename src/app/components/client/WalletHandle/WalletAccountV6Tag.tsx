@@ -151,6 +151,7 @@ interface PendingClaim {
   starknetAddress: string;
   amount: number;
   network: "mainnet" | "sepolia";
+  tipPercent: number;
 }
 
 interface WalletAccountV6TagProps {
@@ -377,7 +378,9 @@ export default function WalletAccountV6Tag({ onlyPay = false }: WalletAccountV6T
 
   // Pays out one pending claim as a private in-pool transfer - same STRK20
   // "transfer" action as handleSelfTransfer, just with the claim's own
-  // recipient/amount instead of self/1 STRK. Only produces a real payout if
+  // recipient/net amount instead of self/1 STRK. tipPercent stays with the
+  // safe wallet - covers this payout's own network fee and, above that,
+  // whatever the claimant chose to leave. Only produces a real payout if
   // the connected wallet is the actual safe wallet (whoever holds that key
   // is the only one who can sign it) - this UI has no separate gate beyond
   // that, matching how every other tab here works.
@@ -389,12 +392,13 @@ export default function WalletAccountV6Tag({ onlyPay = false }: WalletAccountV6T
       return;
     }
     setPayingKey(key);
-    const amountWei = BigInt(Math.round(claim.amount * 1e18));
+    const netAmount = claim.amount * (1 - claim.tipPercent / 100);
+    const amountWei = BigInt(Math.round(netAmount * 1e18));
     const actions: WALLET_API.STRK20_ACTION[] = [
       { type: "transfer", token: TOKEN, amount: num.toHex(amountWei), recipient: claim.starknetAddress },
     ];
     const setResult = (r: ActionResult) => setPayResults((prev) => ({ ...prev, [key]: r }));
-    const txH = await submit(actions, setResult, `${claim.amount.toFixed(4)} STRK`);
+    const txH = await submit(actions, setResult, `${netAmount.toFixed(4)} STRK`);
     setPayingKey(null);
     if (!txH) return;
     try {
@@ -642,11 +646,12 @@ export default function WalletAccountV6Tag({ onlyPay = false }: WalletAccountV6T
               visibleClaims.map((c) => {
                 const key = `${c.repoUrl}::${c.network}`;
                 const result = payResults[key];
+                const netAmount = c.amount * (1 - c.tipPercent / 100);
                 return (
                   <div key={key} style={{ marginTop: 12 }}>
                     <div className={styles.subLine}>
                       <span>
-                        {c.repoUrl.replace("https://github.com/", "")} · {fmtStrk(BigInt(Math.round(c.amount * 1e18)))} STRK
+                        {c.repoUrl.replace("https://github.com/", "")} · {fmtStrk(BigInt(Math.round(c.amount * 1e18)))} STRK rescued · {c.tipPercent}% held back
                       </span>
                       <span className={styles.subMono}>{shortHex(c.starknetAddress)}</span>
                     </div>
@@ -655,7 +660,7 @@ export default function WalletAccountV6Tag({ onlyPay = false }: WalletAccountV6T
                       disabled={!isConnected || payingKey === key}
                       onClick={() => handlePayClaim(c)}
                     >
-                      {payingKey === key ? "Sending private transfer…" : `Pay ${c.amount.toFixed(4)} STRK privately`}
+                      {payingKey === key ? "Sending private transfer…" : `Pay ${netAmount.toFixed(4)} STRK privately`}
                     </button>
                     {result ? <ResultCard r={result} /> : null}
                   </div>
