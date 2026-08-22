@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
-import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Wallet2 } from "lucide-react";
+import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Pencil, Check } from "lucide-react";
 import * as constants from "@/utils/constants";
 import { useStoreWallet } from "./Wallet/walletContext";
 import { useFrontendProvider } from "./client/provider/providerContext";
@@ -22,15 +22,26 @@ function sameAddress(a?: string | null, b?: string | null): boolean {
   }
 }
 
+function shortAddr(a?: string | null): string {
+  if (!a) return "";
+  return a.length > 18 ? `${a.slice(0, 10)}…${a.slice(-6)}` : a;
+}
+
+type NetworkKey = "mainnet" | "sepolia";
+
+// Frontend provider index that each pool network lives on (see constants.ts:
+// 0 = Mainnet, 2 = Sepolia).
+const NETWORK_INDEX: Record<NetworkKey, number> = { mainnet: 0, sepolia: 2 };
+
 interface Claimable {
   repoUrl: string;
-  network: "mainnet" | "sepolia";
+  network: NetworkKey;
   amount: number;
 }
 
 interface Claim {
   repoUrl: string;
-  network: "mainnet" | "sepolia";
+  network: NetworkKey;
   amount: number;
   status: "pending" | "paid";
   starknetAddress: string;
@@ -42,16 +53,14 @@ interface Claim {
 function TipSlider({ value, onChange, amount }: { value: number; onChange: (v: number) => void; amount: number }) {
   const netPercent = 100 - value;
   const netAmount = amount * (netPercent / 100);
-  const heldAmount = amount * (value / 100);
   return (
-    <div className="flex-1 min-w-[220px]">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-1.5">
+    <div>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-2">
         <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
-          Held back for fees + Aegis: <span className="font-semibold text-black dark:text-white">{value}%</span>
-          {" "}({heldAmount.toFixed(4)} STRK)
+          Held for fees + Aegis · <span className="font-semibold text-black dark:text-white">{value}%</span>
         </p>
-        <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-          You receive {netAmount.toFixed(4)} STRK ({netPercent.toFixed(1)}%)
+        <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+          You receive {netAmount.toFixed(4)} STRK
         </p>
       </div>
       <input
@@ -61,7 +70,7 @@ function TipSlider({ value, onChange, amount }: { value: number; onChange: (v: n
         step={0.5}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="w-full accent-black dark:accent-white"
+        className="w-full"
         aria-label="Percentage held back for fees and Aegis, rest paid to you"
         aria-valuetext={`${value}% held back, you receive ${netPercent.toFixed(1)}%`}
       />
@@ -74,14 +83,16 @@ export function ClaimPanel() {
   const isWalletConnected = useStoreWallet((s) => s.isConnected);
   const walletAddress = useStoreWallet((s) => s.address);
   const myFrontendProviderIndex = useFrontendProvider((s) => s.currentFrontendProviderIndex);
+  const setFrontendProviderIndex = useFrontendProvider((s) => s.setCurrentFrontendProviderIndex);
   const walletNetworkName = constants.Strk20Networks[myFrontendProviderIndex];
   const [claimable, setClaimable] = useState<Claimable[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [addresses, setAddresses] = useState<Record<string, string>>({});
   const [tips, setTips] = useState<Record<string, number>>({});
+  const [editing, setEditing] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<Record<string, string>>({});
-  const [safeAddresses, setSafeAddresses] = useState<Record<"mainnet" | "sepolia", string | null>>({
+  const [safeAddresses, setSafeAddresses] = useState<Record<NetworkKey, string | null>>({
     mainnet: null,
     sepolia: null,
   });
@@ -93,12 +104,15 @@ export function ClaimPanel() {
       .catch(() => {});
   }, []);
 
+  // The network the panel is currently showing — derived from the same
+  // provider index the wallet/pay flow uses, so "Mainnet" here and the
+  // network a payout goes out on are always the same thing.
+  const selectedNetwork: NetworkKey = myFrontendProviderIndex === NETWORK_INDEX.mainnet ? "mainnet" : "sepolia";
+
   // Paying out a claim is a safe-wallet-operator action, not something a
   // random visitor's own wallet can do - it needs to actually be the wallet
-  // holding the rescued funds. Gate the pay UI on that instead of just
-  // "some wallet is connected", so a claimant connecting their own wallet
-  // sees why nothing happens instead of a button that just fails.
-  const walletNetworkKey = walletNetworkName?.toLowerCase() as "mainnet" | "sepolia" | undefined;
+  // holding the rescued funds.
+  const walletNetworkKey = walletNetworkName?.toLowerCase() as NetworkKey | undefined;
   const isSafeWallet =
     isWalletConnected && !!walletNetworkKey && sameAddress(walletAddress, safeAddresses[walletNetworkKey]);
 
@@ -116,8 +130,8 @@ export function ClaimPanel() {
     if (status === "authenticated") load();
   }, [status]);
 
-  // Seed the address/tip inputs for pending claims with their current
-  // values, so editing shows what's there instead of resetting to defaults.
+  // Seed the address/tip inputs for pending claims with their current values,
+  // so editing shows what's there instead of resetting to defaults.
   useEffect(() => {
     setAddresses((a) => {
       const next = { ...a };
@@ -137,11 +151,26 @@ export function ClaimPanel() {
     });
   }, [claims]);
 
-  const submit = async (repoUrl: string, network: "mainnet" | "sepolia") => {
+  // Auto-fill the receiving address for not-yet-submitted claims with the
+  // connected wallet — no reason to hand-type an address the wallet already
+  // knows. Only fills empty fields, so a manual edit is never clobbered.
+  useEffect(() => {
+    if (!isWalletConnected || !walletAddress) return;
+    setAddresses((a) => {
+      const next = { ...a };
+      for (const c of claimable) {
+        const key = `${c.repoUrl}::${c.network}`;
+        if (next[key] === undefined || next[key] === "") next[key] = walletAddress;
+      }
+      return next;
+    });
+  }, [isWalletConnected, walletAddress, claimable]);
+
+  const submit = async (repoUrl: string, network: NetworkKey) => {
     const key = `${repoUrl}::${network}`;
-    const starknetAddress = addresses[key]?.trim();
+    const starknetAddress = addresses[key]?.trim() || (isWalletConnected ? walletAddress : "");
     if (!starknetAddress) {
-      setError((e) => ({ ...e, [key]: "Enter the Starknet address that should receive this" }));
+      setError((e) => ({ ...e, [key]: "Connect a wallet or enter the Starknet address that should receive this" }));
       return;
     }
     setSubmitting(key);
@@ -159,6 +188,7 @@ export function ClaimPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit claim");
+      setEditing((e) => ({ ...e, [key]: false }));
       load();
     } catch (e: any) {
       setError((err) => ({ ...err, [key]: e.message ?? "Failed to submit claim" }));
@@ -167,217 +197,242 @@ export function ClaimPanel() {
     }
   };
 
+  // Compact receiving-address control: shows the address as a mono pill with
+  // an Edit affordance once it's set (the common case now that it auto-fills
+  // from the wallet), and only expands into a full input when there's nothing
+  // yet or the user chooses to change it.
+  const renderAddressField = (keyId: string, network: NetworkKey) => {
+    const repoUrl = keyId.split("::")[0];
+    const value = addresses[keyId] ?? "";
+    const isMine = sameAddress(value, walletAddress);
+    const open = editing[keyId] || !value;
+    if (open) {
+      return (
+        <div className="flex flex-col sm:flex-row gap-2">
+          <input
+            type="text"
+            aria-label="Starknet address to receive this"
+            placeholder="Starknet address to receive this"
+            value={value}
+            onChange={(e) => setAddresses((a) => ({ ...a, [keyId]: e.target.value }))}
+            className="flex-1 ls-input font-mono text-xs"
+          />
+          <button
+            onClick={() => submit(repoUrl, network)}
+            disabled={submitting === keyId || !value.trim()}
+            className="btn-primary text-sm px-5 py-2 whitespace-nowrap disabled:opacity-50"
+          >
+            {submitting === keyId ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Save</>}
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-between gap-3 rounded-xl bg-ls-gray-50 dark:bg-ls-gray-800/60 border border-ls-gray-200 dark:border-ls-gray-700 px-4 py-2.5">
+        <div className="min-w-0">
+          <p className="font-mono text-sm text-black dark:text-white truncate">{shortAddr(value)}</p>
+          {isMine && <p className="text-[11px] text-ls-gray-400">your connected wallet</p>}
+        </div>
+        <button
+          onClick={() => setEditing((e) => ({ ...e, [keyId]: true }))}
+          className="text-xs font-semibold text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1 shrink-0"
+        >
+          <Pencil size={12} /> Change
+        </button>
+      </div>
+    );
+  };
+
+  const visibleClaimable = claimable.filter((c) => c.network === selectedNetwork);
+  const visibleClaims = claims.filter((c) => c.network === selectedNetwork);
+  const hasAny = claimable.length > 0 || claims.length > 0;
+  const netCount = (n: NetworkKey) =>
+    claimable.filter((c) => c.network === n).length + claims.filter((c) => c.network === n).length;
+
   return (
     <section id="claim" className="py-16 border-y border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50 dark:bg-ls-gray-950">
       <div className="section-container max-w-2xl">
-        <p className="eyebrow">
-          Claim
-        </p>
+        <p className="eyebrow">Claim</p>
         <h2 className="font-display text-2xl lg:text-3xl font-semibold text-black dark:text-white tracking-tight mb-3">
           Was one of your repos rescued?
         </h2>
         <p className="text-ls-gray-500 dark:text-ls-gray-400 mb-8">
-          Sign in with the GitHub account that owns the repo — we check your
-          login against the repo's owner and the rescue ledger, no manual
-          proof needed.
+          Sign in with the GitHub account that owns the repo — we match your
+          login against the repo's owner and the rescue ledger, no manual proof
+          needed.
         </p>
 
         {status !== "authenticated" ? (
           <button
             onClick={() => signIn("github")}
             disabled={status === "loading"}
-            className="btn-primary text-sm px-6 py-3 flex items-center gap-2 disabled:opacity-50"
+            className="btn-primary text-sm px-6 py-3 disabled:opacity-50"
           >
             <KeyRound size={16} /> Connect GitHub
           </button>
-        ) : claimable.length === 0 && claims.length === 0 ? (
+        ) : !hasAny ? (
           <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
             Signed in as <span className="font-semibold">{session?.user?.name ?? "you"}</span> — no rescues on record for repos you own.
           </p>
         ) : (
           <>
-            {claimable.map((c) => {
-              const key = `${c.repoUrl}::${c.network}`;
-              return (
-                <div key={key} className="ls-card mb-4">
-                  <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
-                    <div className="min-w-0">
-                      <span className="tag-ready inline-flex items-center gap-1.5 mb-2">
-                        <Sparkles size={11} /> Ready to claim
-                      </span>
-                      <p className="font-semibold text-black dark:text-white truncate">
-                        {c.repoUrl.replace("https://github.com/", "")}
-                      </p>
-                      <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
-                        rescued on {c.network}
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="hero-stat text-4xl text-black dark:text-white leading-none tracking-tight">
-                        {c.amount.toFixed(4)}
-                      </p>
-                      <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col sm:flex-row gap-2 mb-3">
-                    <input
-                      type="text"
-                      aria-label="Your Starknet address, registered with the pool"
-                      placeholder="Your Starknet address, registered with the pool (paid out as a private transfer)"
-                      value={addresses[key] ?? ""}
-                      onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
-                      className="flex-1 ls-input"
-                    />
-                    <button
-                      onClick={() => submit(c.repoUrl, c.network)}
-                      disabled={submitting === key}
-                      className="btn-primary text-sm px-5 py-2 whitespace-nowrap disabled:opacity-50"
-                    >
-                      {submitting === key ? <Loader2 size={14} className="animate-spin" /> : "Claim"}
-                    </button>
-                  </div>
-                  <TipSlider
-                    value={tips[key] ?? DEFAULT_TIP_PERCENT}
-                    onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
-                    amount={c.amount}
-                  />
-                  {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
-                </div>
-              );
-            })}
-
-            {claims.some((c) => c.status === "pending") && (
-              <div
-                className={`ls-card mb-4 flex items-center justify-between gap-3 ${
-                  isSafeWallet
-                    ? "border-emerald-200 dark:border-emerald-800/60"
-                    : isWalletConnected
-                    ? "border-amber-200 dark:border-amber-800/60"
-                    : "border-dashed"
-                }`}
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div
-                    className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
-                      isSafeWallet
-                        ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400"
-                        : isWalletConnected
-                        ? "bg-amber-50 text-amber-600 dark:bg-amber-900/20 dark:text-amber-400"
-                        : "bg-ls-gray-100 text-ls-gray-400 dark:bg-ls-gray-800 dark:text-ls-gray-500"
+            {/* Network switch — one network at a time keeps mainnet and testnet
+                claims from stacking up together. */}
+            <div className="inline-flex items-center gap-1 p-1 mb-6 rounded-xl bg-ls-gray-100 dark:bg-ls-gray-900 border border-ls-gray-200 dark:border-ls-gray-800">
+              {(["mainnet", "sepolia"] as NetworkKey[]).map((n) => {
+                const active = selectedNetwork === n;
+                const count = netCount(n);
+                return (
+                  <button
+                    key={n}
+                    onClick={() => setFrontendProviderIndex(NETWORK_INDEX[n])}
+                    className={`px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-colors flex items-center gap-2 ${
+                      active
+                        ? "bg-white dark:bg-ls-gray-700 text-black dark:text-white shadow-sm"
+                        : "text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white"
                     }`}
                   >
-                    <Wallet2 size={16} />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-0.5">
-                      Safe wallet only
-                    </p>
-                    <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400 truncate">
-                      {isSafeWallet
-                        ? `Connected as the safe wallet · ${walletNetworkName} · ${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}`
-                        : isWalletConnected
-                        ? `This wallet (${walletAddress?.slice(0, 6)}…${walletAddress?.slice(-4)}) isn't the Aegis safe wallet — paying out is disabled until the safe wallet itself connects.`
-                        : "Paying out a claim is done by whoever holds the Aegis safe wallet's key — not the claimant's own wallet. Connect it here to pay the pending claims below."}
-                    </p>
-                  </div>
-                </div>
-                <SelectWallet variant="nav" />
-              </div>
-            )}
-
-            {claims.map((c) => {
-              const key = `${c.repoUrl}::${c.network}`;
-              const hasUnsavedEdits =
-                c.status === "pending" &&
-                ((addresses[key] !== undefined && addresses[key] !== c.starknetAddress) ||
-                  (tips[key] !== undefined && tips[key] !== c.tipPercent));
-              return (
-                <div key={key} className="ls-card mb-4">
-                  <div className="flex flex-wrap items-start justify-between gap-4 mb-3">
-                    <div className="min-w-0">
-                      <span className={c.status === "paid" ? "tag-clean inline-flex items-center gap-1.5 mb-2" : "tag-pending inline-flex items-center gap-1.5 mb-2"}>
-                        {c.status === "paid" ? <CheckCircle2 size={11} /> : <Clock3 size={11} />}
-                        {c.status === "paid" ? (c.paidPrivately ? "Paid privately" : "Paid") : "Pending payout"}
+                    {n}
+                    {count > 0 && (
+                      <span
+                        className={`text-[11px] font-bold px-1.5 rounded-full ${
+                          active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-ls-gray-200 dark:bg-ls-gray-800"
+                        }`}
+                      >
+                        {count}
                       </span>
-                      <p className="font-semibold text-black dark:text-white truncate">
-                        {c.repoUrl.replace("https://github.com/", "")}
-                      </p>
-                      <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">{c.network}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="hero-stat text-4xl text-black dark:text-white leading-none tracking-tight">
-                        {c.amount.toFixed(4)}
-                      </p>
-                      <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
-                      {c.status === "paid" && (
-                        <a
-                          href={`https://${c.network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${c.paidTxHash}`}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="link-arrow text-xs mt-1.5"
-                        >
-                          View tx <ExternalLink size={11} />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                  {c.status === "pending" && (
-                    <>
-                      <p className="step-label">
-                        <span className="step-number">1</span> You choose where it goes
-                      </p>
-                      <div className="flex flex-col sm:flex-row gap-2 mb-3">
-                        <input
-                          type="text"
-                          aria-label="Starknet address to receive this"
-                          placeholder="Starknet address to receive this"
-                          value={addresses[key] ?? ""}
-                          onChange={(e) => setAddresses((a) => ({ ...a, [key]: e.target.value }))}
-                          className="flex-1 ls-input"
-                        />
-                        <button
-                          onClick={() => submit(c.repoUrl, c.network)}
-                          disabled={
-                            submitting === key ||
-                            (addresses[key] === c.starknetAddress && tips[key] === c.tipPercent)
-                          }
-                          className="btn-ghost text-sm px-5 py-2 whitespace-nowrap disabled:opacity-50"
-                        >
-                          {submitting === key ? <Loader2 size={14} className="animate-spin" /> : "Update"}
-                        </button>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+
+            {visibleClaimable.length === 0 && visibleClaims.length === 0 ? (
+              <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
+                Nothing on <span className="font-semibold capitalize">{selectedNetwork}</span> — switch networks above to see your other claims.
+              </p>
+            ) : (
+              <>
+                {/* Ready-to-claim (not yet submitted) */}
+                {visibleClaimable.map((c) => {
+                  const key = `${c.repoUrl}::${c.network}`;
+                  return (
+                    <div key={key} className="ls-card mb-4">
+                      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+                        <div className="min-w-0">
+                          <span className="tag-ready inline-flex items-center gap-1.5 mb-2">
+                            <Sparkles size={11} /> Ready to claim
+                          </span>
+                          <p className="font-semibold text-black dark:text-white truncate">
+                            {c.repoUrl.replace("https://github.com/", "")}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="hero-stat text-4xl text-black dark:text-white leading-none tracking-tight">
+                            {c.amount.toFixed(4)}
+                          </p>
+                          <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
+                        </div>
                       </div>
-                      <TipSlider
-                        value={tips[key] ?? c.tipPercent}
-                        onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
-                        amount={c.amount}
-                      />
-                      {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
-
-                      <div className="ls-divider my-4" />
-
-                      <p className="step-label">
-                        <span className="step-number">2</span> The Aegis safe wallet sends it
-                      </p>
-                      {hasUnsavedEdits ? (
-                        <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
-                          Click Update above to save these changes before paying.
-                        </p>
-                      ) : (
-                        <PayClaimInline
-                          repoUrl={c.repoUrl}
-                          network={c.network}
+                      <div className="space-y-3">
+                        {renderAddressField(key, c.network)}
+                        <TipSlider
+                          value={tips[key] ?? DEFAULT_TIP_PERCENT}
+                          onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
                           amount={c.amount}
-                          tipPercent={c.tipPercent}
-                          starknetAddress={c.starknetAddress}
-                          isSafeWallet={isSafeWallet}
-                          onPaid={load}
                         />
+                      </div>
+                      {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
+                    </div>
+                  );
+                })}
+
+                {/* Slim connect-the-safe-wallet hint, only when there's a pending
+                    payout and the safe wallet isn't the one connected. */}
+                {visibleClaims.some((c) => c.status === "pending") && !isSafeWallet && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 px-4 py-3 rounded-2xl border border-dashed border-ls-gray-300 dark:border-ls-gray-700">
+                    <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
+                      Payouts are sent by the Aegis safe wallet — connect it to pay the pending claims below.
+                    </p>
+                    <SelectWallet variant="nav" />
+                  </div>
+                )}
+
+                {/* Submitted claims (pending / paid) */}
+                {visibleClaims.map((c) => {
+                  const key = `${c.repoUrl}::${c.network}`;
+                  const hasUnsavedEdits =
+                    c.status === "pending" &&
+                    ((addresses[key] !== undefined && addresses[key] !== c.starknetAddress) ||
+                      (tips[key] !== undefined && tips[key] !== c.tipPercent));
+                  return (
+                    <div key={key} className="ls-card mb-4">
+                      <div className="flex flex-wrap items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <span className={c.status === "paid" ? "tag-clean inline-flex items-center gap-1.5 mb-2" : "tag-pending inline-flex items-center gap-1.5 mb-2"}>
+                            {c.status === "paid" ? <CheckCircle2 size={11} /> : <Clock3 size={11} />}
+                            {c.status === "paid" ? (c.paidPrivately ? "Paid privately" : "Paid") : "Pending payout"}
+                          </span>
+                          <p className="font-semibold text-black dark:text-white truncate">
+                            {c.repoUrl.replace("https://github.com/", "")}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <p className="hero-stat text-4xl text-black dark:text-white leading-none tracking-tight">
+                            {c.amount.toFixed(4)}
+                          </p>
+                          <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
+                          {c.status === "paid" && (
+                            <a
+                              href={`https://${c.network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${c.paidTxHash}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="link-arrow text-xs mt-1.5"
+                            >
+                              View tx <ExternalLink size={11} />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+
+                      {c.status === "pending" && (
+                        <div className="mt-4 space-y-3">
+                          {renderAddressField(key, c.network)}
+                          <TipSlider
+                            value={tips[key] ?? c.tipPercent}
+                            onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
+                            amount={c.amount}
+                          />
+                          {error[key] && <p className="text-sm text-red-600 dark:text-red-400">{error[key]}</p>}
+
+                          <div className="pt-1">
+                            {hasUnsavedEdits ? (
+                              <button
+                                onClick={() => submit(c.repoUrl, c.network)}
+                                disabled={submitting === key}
+                                className="btn-primary text-sm px-5 py-2 disabled:opacity-50"
+                              >
+                                {submitting === key ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Save changes</>}
+                              </button>
+                            ) : (
+                              <PayClaimInline
+                                repoUrl={c.repoUrl}
+                                network={c.network}
+                                amount={c.amount}
+                                tipPercent={c.tipPercent}
+                                starknetAddress={c.starknetAddress}
+                                isSafeWallet={isSafeWallet}
+                                onPaid={load}
+                              />
+                            )}
+                          </div>
+                        </div>
                       )}
-                    </>
-                  )}
-                </div>
-              );
-            })}
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </>
         )}
       </div>
