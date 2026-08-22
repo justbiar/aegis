@@ -1,28 +1,26 @@
 import type { Metadata } from 'next'
-import { Inter, Space_Mono, Space_Grotesk } from 'next/font/google'
+import { Inter, Instrument_Serif, Fragment_Mono } from 'next/font/google'
 import { SessionProvider } from 'next-auth/react'
 import './globals.css'
 
-// Clean neutral grotesque for everything (matches the Uniswap reference); a mono
-// only for hex addresses / hashes.
+// Subframe design system: Inter for everything functional (headings included),
+// a single Instrument Serif accent word/phrase as editorial punctuation, and
+// Fragment Mono for code-like / technical labels (hex, hashes, tags).
 const inter = Inter({
   subsets: ['latin'],
   variable: '--font-body',
   display: 'swap',
 })
-const spaceMono = Space_Mono({
+const instrumentSerif = Instrument_Serif({
   subsets: ['latin'],
-  weight: ['400', '700'],
-  variable: '--font-mono-ui',
+  weight: '400',
+  variable: '--font-serif',
   display: 'swap',
 })
-// A wider, editorial grotesque used only for large headlines — the rest of
-// the UI stays on the body font so this reads as a deliberate accent, not a
-// full typeface swap.
-const spaceGrotesk = Space_Grotesk({
+const fragmentMono = Fragment_Mono({
   subsets: ['latin'],
-  weight: ['500', '600', '700'],
-  variable: '--font-display',
+  weight: '400',
+  variable: '--font-mono-ui',
   display: 'swap',
 })
 
@@ -39,7 +37,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${spaceMono.variable} ${spaceGrotesk.variable}`}
+      className={`${inter.variable} ${instrumentSerif.variable} ${fragmentMono.variable}`}
       suppressHydrationWarning
     >
       <body>

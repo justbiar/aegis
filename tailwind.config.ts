@@ -8,9 +8,12 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
+        // Subframe: Inter for everything (headings included); serif is a single
+        // accent word only; Fragment Mono for technical labels.
         sans: ["var(--font-body)", "Inter", "system-ui", "sans-serif"],
-        mono: ["var(--font-mono-ui)", "Space Mono", "ui-monospace", "monospace"],
-        display: ["var(--font-display)", "Space Grotesk", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono-ui)", "Fragment Mono", "ui-monospace", "monospace"],
+        display: ["var(--font-body)", "Inter", "system-ui", "sans-serif"],
+        serif: ["var(--font-serif)", "Instrument Serif", "Georgia", "serif"],
       },
       colors: {
         ls: {

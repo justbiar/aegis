@@ -19,25 +19,28 @@ html {
    global so components outside that panel (Navbar, landing sections) can
    use the same accent colors. */
 :root {
-  --ink: #0d0e0e;
-  --muted: #7d7d8a;
-  --bg: #ffffff;
-  /* Page canvas — a muted sage so the white cards read as floating surfaces
-     (adapted from the reference dashboard's green-grey ground). */
-  --canvas: #bcccc4;
-  --card: #ffffff;
-  --line: #eaeaef;
-  --inset: #f5f5f7;
-  --inset-2: #ededf1;
-  /* Signature data accent: green → amber → red, the reference's chart spectrum. */
-  --spectrum: linear-gradient(90deg, #16b364 0%, #f5a623 52%, #f0555a 100%);
-  --pink: #e56b43;
-  --pink-soft: #fdefe9;
-  --pink-soft-2: #f9ddd1;
-  --pink-text: #b0491f;
+  /* ── Subframe: monochrome graphite on warm vellum, zero chromatic accent ── */
+  --ink: #171717; /* ink-black — headings/body */
+  --muted: #5c5c5c; /* pencil — secondary text */
+  --faint: #a3a3a3; /* faint graphite — tertiary/inactive */
+  --bg: #fafafa;
+  --canvas: #fafafa; /* warm off-white page ground */
+  --card: #ededed; /* card surface, one step up, no shadow */
+  --graphite: #242424; /* the single loud fill: primary buttons/pills */
+  --line: #e5e7eb; /* hairline border — structure without shadow */
+  --inset: #ededed;
+  --inset-2: #e5e7eb;
+  /* Decorative accents are neutralised to graphite — the system is zero-color;
+     any former "pink/spectrum" accent now reads as ink. */
+  --spectrum: linear-gradient(90deg, #242424 0%, #a3a3a3 100%);
+  --pink: #242424;
+  --pink-soft: #ededed;
+  --pink-soft-2: #e5e7eb;
+  --pink-text: #171717;
+  /* Functional status only (rescued / exposure / danger) — structural, minimal. */
   --green: #0e9f6e;
-  --green-soft: #e7f7ef;
-  --danger: #e5484d;
+  --green-soft: #eaf3ee;
+  --danger: #b42318;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -180,32 +183,39 @@ input[type="range"]:active::-moz-range-thumb { transform: scale(0.96); }
     px-4 py-2 rounded-lg text-sm font-semibold transition-transform duration-150;
 }
 
-/* ── Lightspark-style utilities, dark-mode aware ─────────────────────────── */
+/* ── Subframe utilities — monochrome, flat, hairline-bordered ───────────── */
 
+/* The single loud element: graphite fill, off-white text, 16px radius, and a
+   faint inset bevel (the one allowed shadow) so even the loud control has a
+   hand-pressed feel. */
 .btn-primary {
-  @apply inline-flex items-center justify-center gap-2 px-6 py-3 bg-black text-white
-    font-semibold text-sm rounded-xl
-    shadow-[0_1px_2px_rgba(0,0,0,0.15),0_6px_16px_-8px_rgba(0,0,0,0.35)]
-    hover:bg-ls-gray-800 hover:-translate-y-0.5
-    hover:shadow-[0_2px_4px_rgba(0,0,0,0.18),0_12px_28px_-10px_rgba(0,0,0,0.45)]
-    active:translate-y-0 active:shadow-[0_1px_2px_rgba(0,0,0,0.15)]
-    transition-all duration-200 ease-out
-    dark:bg-white dark:text-black dark:hover:bg-ls-gray-200 dark:shadow-none;
+  @apply inline-flex items-center justify-center gap-2 px-6 py-3
+    font-medium text-sm rounded-2xl transition-colors duration-200;
+  background: var(--graphite);
+  color: #fafafa;
+  box-shadow: inset 0 4px 4px -2px rgba(255, 255, 255, 0.25),
+    inset 0 -4px 4px -2px rgba(0, 0, 0, 0.25),
+    inset -2px 0 2px -2px rgba(255, 255, 255, 0.1);
+}
+.btn-primary:hover {
+  background: #171717;
 }
 
+/* Quiet counterpart: a hairline that happens to be clickable. */
 .btn-ghost {
-  @apply inline-flex items-center justify-center gap-2 px-6 py-3 bg-transparent text-black
-    font-semibold text-sm border border-ls-gray-200 rounded-xl
-    hover:bg-ls-gray-50 hover:border-ls-gray-300 hover:-translate-y-0.5
-    active:translate-y-0
-    transition-all duration-200 ease-out
-    dark:text-white dark:border-ls-gray-600 dark:hover:bg-ls-gray-800 dark:hover:border-ls-gray-500;
+  @apply inline-flex items-center justify-center gap-2 px-6 py-3
+    font-medium text-sm rounded-2xl transition-colors duration-200;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.btn-ghost:hover {
+  background: var(--card);
 }
 
 .link-arrow {
-  @apply inline-flex items-center gap-1 text-black font-semibold text-sm
-    hover:gap-2 transition-all duration-200
-    dark:text-white;
+  @apply inline-flex items-center gap-1 font-medium text-sm hover:gap-2 transition-all duration-200;
+  color: var(--ink);
 }
 
 /* Text input sitting inside a .ls-card. dark:bg-ls-gray-800 (not pure
@@ -224,12 +234,12 @@ input[type="range"]:active::-moz-range-thumb { transform: scale(0.96); }
   @apply max-w-7xl mx-auto px-6 lg:px-8;
 }
 
+/* Flat card: one lightness step up from canvas, hairline border, NO shadow —
+   depth comes from the border, not elevation. */
 .ls-card {
-  @apply bg-white border border-ls-gray-200 rounded-3xl p-7
-    shadow-[0_1px_3px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.08)]
-    hover:shadow-[0_2px_6px_rgba(0,0,0,0.06),0_16px_40px_-16px_rgba(0,0,0,0.12)]
-    transition-shadow duration-300
-    dark:bg-ls-gray-900 dark:border-ls-gray-700 dark:shadow-none;
+  @apply rounded-3xl p-7 transition-colors duration-200;
+  background: var(--card);
+  border: 1px solid var(--line);
 }
 
 .ls-divider {

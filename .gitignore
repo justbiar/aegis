@@ -60,3 +60,6 @@ A1priv/A1priv.ts
 # local-only debug panel (Shield/Send/Unshield/Echo/Balances/Pay) — never
 # meant for production, stays off Vercel entirely
 /src/app/wallet/
+
+# local design reference (tokens/specs used to style the app) — not shipped
+/design/

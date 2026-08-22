@@ -97,7 +97,9 @@ export default function Page() {
 
               <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-black dark:text-white leading-[0.95] tracking-tight mb-6">
                 Whitehat rescue for{" "}
-                <span className="text-gradient-accent">leaked keys</span>
+                <span className="font-serif font-normal italic tracking-tight" style={{ color: "var(--ink)" }}>
+                  leaked keys
+                </span>
               </h1>
 
               <p className="text-lg text-ls-gray-500 dark:text-ls-gray-400 leading-relaxed mb-10 max-w-xl">
@@ -198,21 +200,22 @@ export default function Page() {
       </section>
 
       {/* ── WHY PRIVACY ─────────────────────────────────────────────────── */}
-      <section className="bg-black dark:bg-ls-gray-950 py-24">
+      <section className="py-24">
         <div className="section-container">
           <div className="grid lg:grid-cols-[1.1fr_1fr] gap-14 items-center max-w-6xl mx-auto">
             <div>
               <div className="flex items-center gap-3 mb-8">
-                <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center">
-                  <ShieldCheck size={16} className="text-black" />
+                <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--graphite)" }}>
+                  <ShieldCheck size={16} className="text-[#fafafa]" />
                 </div>
-                <span className="text-white font-bold text-lg">Why it needs privacy</span>
+                <span className="font-bold text-lg text-black dark:text-white">Why it needs privacy</span>
               </div>
-              <p className="font-display text-xl lg:text-2xl font-medium text-white/90 leading-relaxed">
+              <p className="text-xl lg:text-2xl font-medium text-ls-gray-700 dark:text-ls-gray-300 leading-relaxed">
                 A sweep-and-return service is only as safe as its own holding
                 address. A transparent wallet is a target — anyone watching the
                 mempool can front-run the rescue or drain it the moment it's
-                known. Routing rescued funds through the STRK20 shielded pool
+                known. Routing rescued funds through the STRK20{" "}
+                <span className="font-serif italic text-black dark:text-white">shielded pool</span>{" "}
                 removes that window: the holding balance isn't linkable
                 on-chain, and payout to a verified owner is a private transfer,
                 not a public, front-runnable one.
@@ -226,27 +229,28 @@ export default function Page() {
               transition={{ duration: 0.5 }}
               className="flex flex-col sm:flex-row lg:flex-col gap-4"
             >
-              <div className="flex-1 rounded-2xl border border-red-500/20 bg-red-500/5 p-5">
+              <div className="flex-1 rounded-2xl border border-ls-gray-200 dark:border-ls-gray-800 p-5 bg-white dark:bg-ls-gray-900">
                 <div className="flex items-center gap-2 mb-3">
-                  <Eye size={16} className="text-red-400" />
-                  <span className="text-sm font-bold text-red-300">Transparent wallet</span>
+                  <Eye size={16} className="text-ls-gray-400" />
+                  <span className="text-sm font-bold text-black dark:text-white">Transparent wallet</span>
                 </div>
-                <p className="text-sm text-white/50 leading-relaxed">
+                <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400 leading-relaxed">
                   Holding balance visible to anyone. A rescue in flight can be
                   front-run or drained the moment it's spotted.
                 </p>
               </div>
 
               <div className="flex items-center justify-center lg:py-1">
-                <ArrowRight size={18} className="text-white/20 -rotate-90 lg:rotate-0" />
+                <ArrowRight size={18} className="text-ls-gray-400 -rotate-90 lg:rotate-0" />
               </div>
 
-              <div className="flex-1 rounded-2xl border border-white/15 bg-white/[0.04] p-5">
+              {/* The one dark surface here = the secure/shielded side. */}
+              <div className="flex-1 rounded-2xl p-5" style={{ background: "var(--graphite)" }}>
                 <div className="flex items-center gap-2 mb-3">
-                  <EyeOff size={16} className="text-white" />
-                  <span className="text-sm font-bold text-white">STRK20 shielded pool</span>
+                  <EyeOff size={16} className="text-[#fafafa]" />
+                  <span className="text-sm font-bold text-[#fafafa]">STRK20 shielded pool</span>
                 </div>
-                <p className="text-sm text-white/50 leading-relaxed">
+                <p className="text-sm text-[#fafafa]/60 leading-relaxed">
                   Holding balance and payout are unlinkable on-chain — nothing
                   to front-run, nothing to watch.
                 </p>
@@ -278,23 +282,23 @@ export default function Page() {
       </main>
 
       {/* ── FOOTER ──────────────────────────────────────────────────────── */}
-      <footer className="bg-black dark:bg-ls-gray-950 border-t border-ls-gray-900">
+      <footer className="border-t border-ls-gray-200 dark:border-ls-gray-800">
         <div className="section-container py-12">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 bg-white rounded-lg flex items-center justify-center">
-                <ShieldCheck size={14} className="text-black" />
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--graphite)" }}>
+                <ShieldCheck size={14} className="text-[#fafafa]" />
               </div>
-              <span className="text-white font-bold">Aegis</span>
+              <span className="font-bold text-black dark:text-white">Aegis</span>
             </div>
-            <p className="text-white/40 text-xs">
+            <p className="text-ls-gray-500 text-xs">
               MIT License · Built for the STRK20 Private Sprint
             </p>
             <a
               href="https://github.com/justbiar/aegis"
               target="_blank"
               rel="noreferrer"
-              className="text-white/60 text-sm hover:text-white transition-colors flex items-center gap-1.5"
+              className="text-ls-gray-500 text-sm hover:text-black dark:hover:text-white transition-colors flex items-center gap-1.5"
             >
               <ExternalLink size={14} /> Repo
             </a>
