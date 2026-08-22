@@ -7,12 +7,18 @@ import { ProviderInterface, RpcProvider } from "starknet";
 export const addrSTRK = "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 
 // Frontend RPC providers, indexed. The STRK20 privacy pool lives on Mainnet (0)
-// and Sepolia (2); index 1 is a spare public testnet endpoint. NEXT_PUBLIC_PROVIDER_URL
-// is your Alchemy key (see .env.example).
+// and Sepolia (2); index 1 is a spare public testnet endpoint.
+//
+// Mainnet/Sepolia go through our OWN same-origin proxy (/api/rpc/<network>)
+// rather than straight to Alchemy, so the Alchemy key stays server-side and
+// never ships in the client bundle (see src/app/api/rpc/[network]/route.ts).
+// Relative URLs resolve against the page origin in the browser; these providers
+// are only ever called client-side (wallet panel / registration checks), so a
+// relative nodeUrl is fine.
 export const myFrontendProviders: ProviderInterface[] = [
-    new RpcProvider({ nodeUrl: "https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/" + process.env.NEXT_PUBLIC_PROVIDER_URL }),
+    new RpcProvider({ nodeUrl: "/api/rpc/mainnet" }),
     new RpcProvider({ nodeUrl: "https://starknet-testnet.public.blastapi.io/rpc/v0_7" }),
-    new RpcProvider({ nodeUrl: "https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/" + process.env.NEXT_PUBLIC_PROVIDER_URL })];
+    new RpcProvider({ nodeUrl: "/api/rpc/sepolia" })];
 
 // ─── Example anonymizer (echo helper) ───────────────────────────────────────
 // DEMO CONTRACT: StrkInvokeHelper (cairo/src/lib.cairo) just round-trips STRK
