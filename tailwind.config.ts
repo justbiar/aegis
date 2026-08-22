@@ -4,7 +4,9 @@ const config: Config = {
   content: [
     "./src/**/*.{js,ts,jsx,tsx,mdx}",
   ],
-  darkMode: "media",
+  // Subframe is light-only. Gate dark: variants behind a class we never add,
+  // so an OS dark-mode preference can't resurface the old dark theme.
+  darkMode: "class",
   theme: {
     extend: {
       fontFamily: {

@@ -12,7 +12,9 @@ html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color-scheme: light dark;
+  /* Subframe is a light-only system — pin it so an OS dark-mode preference
+     can't fall back to the old dark theme. */
+  color-scheme: light;
 }
 
 /* Shared color tokens for the wallet/claim panel (uni.module.css) — kept
@@ -43,25 +45,7 @@ html {
   --danger: #b42318;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #f0eff5;
-    --muted: #93929f;
-    --bg: #0c0b10;
-    --canvas: #0b100e;
-    --card: #17161d;
-    --line: #29282f;
-    --inset: #1c1b22;
-    --inset-2: #232229;
-    --pink: #e97a54;
-    --pink-soft: rgba(233, 122, 84, 0.16);
-    --pink-soft-2: rgba(233, 122, 84, 0.26);
-    --pink-text: #f0946f;
-    --green: #2fbf85;
-    --green-soft: rgba(47, 191, 133, 0.14);
-    --danger: #f06b6f;
-  }
-}
+/* Subframe is light-only — no prefers-color-scheme:dark token override. */
 
 body {
   font-family: var(--font-body), 'Inter', system-ui, sans-serif;
@@ -92,13 +76,6 @@ body {
 .font-display {
   letter-spacing: -0.02em;
   text-wrap: balance;
-}
-
-@media (prefers-color-scheme: dark) {
-  body {
-    background: var(--canvas);
-    color: #ffffff;
-  }
 }
 
 ::selection {
