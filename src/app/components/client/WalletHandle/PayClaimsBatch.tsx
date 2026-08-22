@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { num } from "starknet";
 import type { WALLET_API } from "@starknet-io/types-js";
 import * as constants from "@/utils/constants";
@@ -62,10 +63,45 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
   const networkName = constants.Strk20Networks[myFrontendProviderIndex];
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  // Pool registration state — a private transfer needs both the sender and
+  // every recipient registered (see isRegisteredInPool). Checked read-only so
+  // the batch can skip unregistered recipients and explain why, instead of
+  // reverting the whole tx with an opaque NOT_REGISTERED.
+  const [senderReg, setSenderReg] = useState<boolean | null>(null);
+  const [recipReg, setRecipReg] = useState<Record<string, boolean>>({});
+  const [checking, setChecking] = useState(false);
 
-  const rows = computePayouts(claims);
-  const payable = rows.filter((r) => r.payable);
-  const skipped = rows.length - payable.length;
+  useEffect(() => {
+    let cancelled = false;
+    if (!isConnected || !connectedAddress) {
+      setSenderReg(null);
+      setRecipReg({});
+      return;
+    }
+    setChecking(true);
+    (async () => {
+      const s = await constants.isRegisteredInPool(myFrontendProviderIndex, connectedAddress);
+      const entries = await Promise.all(
+        claims.map(async (c) => [c.starknetAddress, await constants.isRegisteredInPool(myFrontendProviderIndex, c.starknetAddress)] as const)
+      );
+      if (cancelled) return;
+      setSenderReg(s);
+      setRecipReg(Object.fromEntries(entries));
+      setChecking(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connectedAddress, isConnected, myFrontendProviderIndex, claims.map((c) => c.starknetAddress).join(",")]);
+
+  const rows = computePayouts(claims).map((r) => ({
+    ...r,
+    registered: recipReg[r.claim.starknetAddress] === true,
+  }));
+  const payable = rows.filter((r) => r.payable && r.registered);
+  const tooSmall = rows.filter((r) => !r.payable).length;
+  const unregistered = rows.filter((r) => r.payable && !r.registered).length;
   const netTotal = payable.reduce((s, r) => s + r.net, 0);
   const networkMatches = isConnected && networkName?.toLowerCase() === network;
   const busy = status.kind === "sending" || status.kind === "confirming";
@@ -142,9 +178,20 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
         <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
           Connected wallet is on {networkName ?? "an unsupported network"} — switch it to {network} to pay these.
         </p>
+      ) : senderReg === false ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          This safe wallet isn&apos;t registered with the {network} pool yet — do one Shield from it first (Balances/Shield),
+          then you can pay these out.
+        </p>
+      ) : checking && senderReg === null ? (
+        <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-center gap-1.5">
+          <Loader2 size={12} className="animate-spin" /> Checking pool registrations…
+        </p>
       ) : payable.length === 0 ? (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          The pending total on {network} doesn&apos;t cover the ~{POOL_FEE_STRK} STRK pool fee yet — wait for more rescues before paying.
+          {unregistered > 0
+            ? `${unregistered} recipient${unregistered === 1 ? " isn't" : "s aren't"} registered with the ${network} pool yet — each must do one Shield from its own wallet before it can receive a private payout.`
+            : `The pending total on ${network} doesn't cover the ~${POOL_FEE_STRK} STRK pool fee yet — wait for more rescues before paying.`}
         </p>
       ) : (
         <>
@@ -157,7 +204,8 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
           </button>
           <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 mt-2">
             One transaction · a single ~{POOL_FEE_STRK} STRK pool fee split across recipients (deducted from each payout).
-            {skipped > 0 && ` ${skipped} claim(s) too small to cover their fee share — left pending.`}
+            {unregistered > 0 && ` ${unregistered} recipient(s) not registered — skipped.`}
+            {tooSmall > 0 && ` ${tooSmall} claim(s) too small to cover their fee share — left pending.`}
           </p>
         </>
       )}

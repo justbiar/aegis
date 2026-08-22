@@ -43,3 +43,31 @@ export function echoHelperForIndex(index: number): string {
 // Frontend provider indices where the STRK20 privacy pool is available, mapped to a
 // display name. Used to gate the WalletAccountV6 STRK20 actions.
 export const Strk20Networks: Record<number, string> = { 0: "MAINNET", 2: "SEPOLIA" };
+
+// STRK20 privacy pool contract per frontend provider index (0 = Mainnet, 2 = Sepolia).
+// Needed to read registration state directly from the pool.
+export const Strk20PoolAddress: Record<number, string> = {
+  0: "0x040337b1af3c663e86e333bab5a4b28da8d4652a15a69beee2b677776ffe812a",
+  2: "0x0254a6b2997ef52e9f830ce1f543f6b29768295e8d17e2267d672c552cfe0d91",
+};
+
+// An address can only receive a private transfer once it's registered with the
+// pool (has published a viewing key by doing at least one Shield). The pool's
+// `get_public_key(addr)` returns that key, or 0 when the address has never
+// registered — so a non-zero result is the registration check. Read-only.
+export async function isRegisteredInPool(index: number, address: string): Promise<boolean> {
+  const pool = Strk20PoolAddress[index];
+  if (!pool || !address) return false;
+  try {
+    const provider = myFrontendProviders[index];
+    const res: any = await provider.callContract({
+      contractAddress: pool,
+      entrypoint: "get_public_key",
+      calldata: [address],
+    });
+    const first = Array.isArray(res) ? res[0] : res?.result?.[0] ?? res?.[0];
+    return first !== undefined && BigInt(first) !== 0n;
+  } catch {
+    return false;
+  }
+}
