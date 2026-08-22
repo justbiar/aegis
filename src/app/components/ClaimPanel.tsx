@@ -7,7 +7,7 @@ import * as constants from "@/utils/constants";
 import { useStoreWallet } from "./Wallet/walletContext";
 import { useFrontendProvider } from "./client/provider/providerContext";
 import SelectWallet from "./client/WalletHandle/SelectWallet";
-import PayClaimInline from "./client/WalletHandle/PayClaimInline";
+import PayClaimsBatch from "./client/WalletHandle/PayClaimsBatch";
 
 const DEFAULT_TIP_PERCENT = 2;
 
@@ -192,6 +192,9 @@ export function ClaimPanel() {
 
   const visibleClaimable = claimable.filter((c) => c.network === selectedNetwork);
   const visibleClaims = claims.filter((c) => c.network === selectedNetwork);
+  // Pending claims the safe wallet can pay right now, batched into one tx.
+  const payablePending = visibleClaims.filter((c) => c.status === "pending");
+  const batchNetTotal = payablePending.reduce((s, c) => s + c.amount * (1 - c.tipPercent / 100), 0);
   const hasAny = claimable.length > 0 || claims.length > 0;
   const netCount = (n: NetworkKey) =>
     claimable.filter((c) => c.network === n).length + claims.filter((c) => c.network === n).length;
@@ -317,6 +320,22 @@ export function ClaimPanel() {
                   </div>
                 )}
 
+                {/* Batch payout — one private apply_actions call for every
+                    pending claim on this network, so the flat pool fee is paid
+                    once instead of once per claim. Only the safe wallet sees it. */}
+                {isSafeWallet && payablePending.length > 0 && (
+                  <div className="ls-card mb-4 border-emerald-200 dark:border-emerald-800/60">
+                    <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-1">
+                      Pay out · <span className="capitalize">{selectedNetwork}</span>
+                    </p>
+                    <p className="text-sm text-ls-gray-600 dark:text-ls-gray-300 mb-3">
+                      {payablePending.length} pending {payablePending.length === 1 ? "claim" : "claims"} ·
+                      you send <span className="font-semibold text-black dark:text-white">{batchNetTotal.toFixed(4)} STRK</span>
+                    </p>
+                    <PayClaimsBatch claims={payablePending} network={selectedNetwork} onPaid={load} />
+                  </div>
+                )}
+
                 {/* Submitted claims (pending / paid) */}
                 {visibleClaims.map((c) => {
                   const key = `${c.repoUrl}::${c.network}`;
@@ -372,17 +391,13 @@ export function ClaimPanel() {
                                 {submitting === key ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Save changes</>}
                               </button>
                             ) : isSafeWallet ? (
-                              // Only the safe-wallet operator sees the actual pay
-                              // control — the claimant has already done their part.
-                              <PayClaimInline
-                                repoUrl={c.repoUrl}
-                                network={c.network}
-                                amount={c.amount}
-                                tipPercent={c.tipPercent}
-                                starknetAddress={c.starknetAddress}
-                                isSafeWallet={isSafeWallet}
-                                onPaid={load}
-                              />
+                              // The safe wallet pays every pending claim together
+                              // from the batch bar above — no per-claim button, so
+                              // it can't accidentally pay one at a time and eat a
+                              // separate pool fee for each.
+                              <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-center gap-1.5">
+                                <Clock3 size={13} className="shrink-0" /> Included in the payout above.
+                              </p>
                             ) : (
                               <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-start gap-1.5">
                                 <Clock3 size={13} className="mt-0.5 shrink-0" />
