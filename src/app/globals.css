@@ -103,14 +103,14 @@ input[type="range"]:focus-visible {
 
 .btn-primary {
   @apply inline-flex items-center gap-2 px-6 py-3 bg-black text-white
-    font-semibold text-sm rounded-lg
+    font-semibold text-sm rounded-xl
     hover:bg-ls-gray-800 transition-colors duration-200
     dark:bg-white dark:text-black dark:hover:bg-ls-gray-200;
 }
 
 .btn-ghost {
   @apply inline-flex items-center gap-2 px-6 py-3 bg-transparent text-black
-    font-semibold text-sm border border-ls-gray-200 rounded-lg
+    font-semibold text-sm border border-ls-gray-200 rounded-xl
     hover:bg-ls-gray-50 transition-colors duration-200
     dark:text-white dark:border-ls-gray-600 dark:hover:bg-ls-gray-800;
 }
@@ -125,9 +125,11 @@ input[type="range"]:focus-visible {
    black) keeps it visually nested inside the card instead of reading as a
    disconnected black box against the card's dark:bg-ls-gray-900. */
 .ls-input {
-  @apply px-3 py-2 text-sm rounded-lg border border-ls-gray-300 bg-white text-black
+  @apply px-4 py-3 text-sm rounded-xl border border-ls-gray-300 bg-ls-gray-50 text-black
     placeholder:text-ls-gray-400
+    focus:bg-white focus:border-ls-gray-400
     dark:border-ls-gray-700 dark:bg-ls-gray-800 dark:text-white dark:placeholder:text-ls-gray-500
+    dark:focus:bg-ls-gray-800 dark:focus:border-ls-gray-600
     transition-colors duration-150;
 }
 
@@ -137,8 +139,10 @@ input[type="range"]:focus-visible {
 
 .ls-card {
   @apply bg-white border border-ls-gray-200 rounded-3xl p-7
-    hover:shadow-md transition-shadow duration-300
-    dark:bg-ls-gray-900 dark:border-ls-gray-700;
+    shadow-[0_1px_3px_rgba(0,0,0,0.04),0_8px_24px_-12px_rgba(0,0,0,0.08)]
+    hover:shadow-[0_2px_6px_rgba(0,0,0,0.06),0_16px_40px_-16px_rgba(0,0,0,0.12)]
+    transition-shadow duration-300
+    dark:bg-ls-gray-900 dark:border-ls-gray-700 dark:shadow-none;
 }
 
 .ls-divider {
