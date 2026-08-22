@@ -380,6 +380,7 @@ export default function ConsolePage() {
   }, [entries]);
 
   const latest = epochs[epochs.length - 1];
+  const recentNs = epochs.slice(-5).map((e) => e.n);
   const rescuedTotal = (mainnet?.rescuedTotal ?? 0) + (sepolia?.rescuedTotal ?? 0);
   const rescuedCount = (mainnet?.rescuedCount ?? 0) + (sepolia?.rescuedCount ?? 0);
   const pendingTotal = (mainnet?.requestedTotal ?? 0) + (sepolia?.requestedTotal ?? 0);
@@ -413,30 +414,33 @@ export default function ConsolePage() {
         </div>
       </div>
 
-      {/* EPOCH / PIPELINE STRIP */}
+      {/* EPOCH PROGRESSION STRIP */}
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border border-[#1a1d26] rounded-lg px-4 py-2.5 bg-[#0a0c11]">
-        <span className="text-[#f0f0f5] font-bold">
-          EPOCH <span className="text-[#e56b43]">#{latest?.n ?? "—"}</span>
-        </span>
+        <span className="text-[10px] uppercase tracking-widest text-[#6b7080]">Epoch</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          {recentNs.length === 0 && <span className="text-[#4a4f5c]">#—</span>}
+          {recentNs.map((n, i) => {
+            const isLatest = i === recentNs.length - 1;
+            return (
+              <span key={n} className="flex items-center gap-2">
+                <span
+                  className={`tabular-nums transition-colors ${
+                    isLatest ? "text-[#e56b43] font-bold text-lg" : "text-[#4a4f5c] text-sm"
+                  }`}
+                >
+                  #{n}
+                </span>
+                {!isLatest && <span className="text-[#2a2e38]">→</span>}
+              </span>
+            );
+          })}
+          {recentNs.length > 0 && (
+            <span className="ml-1 w-1.5 h-1.5 rounded-full bg-[#2fbf85] animate-pulse" title="live" />
+          )}
+        </div>
         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#12151c] text-[10px] text-[#6b7080] tracking-wider">
-          <span className="w-1.5 h-1.5 rounded-full bg-[#2fbf85] animate-pulse" />
           SCAN ENGINE · GITHUB ACTIONS{latest ? ` · last ${ago(latest.ts)}` : ""}
         </span>
-        <span className="text-[#6b7080]">·</span>
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {STAGES.map((s, i) => (
-            <span key={s} className="flex items-center gap-1.5">
-              <span
-                className={`px-2 py-0.5 rounded text-[10px] tracking-wider transition-colors duration-300 ${
-                  i === stage ? "bg-[#22d3ee] text-black font-bold" : "bg-[#12151c] text-[#6b7080]"
-                }`}
-              >
-                {String(i + 1).padStart(2, "0")} {s}
-              </span>
-              {i < STAGES.length - 1 && <span className="text-[#2a2e38]">→</span>}
-            </span>
-          ))}
-        </div>
         <span className="text-[#6b7080] ml-auto">
           scanned <span className="text-[#c9ccd6]">{latest?.scanned ?? "—"}</span> · clean{" "}
           <span className="text-[#2fbf85]">{latest?.clean ?? "—"}</span> · exposure{" "}
@@ -496,6 +500,23 @@ export default function ConsolePage() {
             ))}
           </div>
         </Panel>
+      </div>
+
+      {/* PIPELINE STRIP (moved below the graph) */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border border-[#1a1d26] rounded-lg px-4 py-2.5 bg-[#0a0c11]">
+        <span className="text-[10px] uppercase tracking-widest text-[#6b7080] mr-1">Pipeline</span>
+        {STAGES.map((s, i) => (
+          <span key={s} className="flex items-center gap-1.5">
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] tracking-wider transition-colors duration-300 ${
+                i === stage ? "bg-[#22d3ee] text-black font-bold" : "bg-[#12151c] text-[#6b7080]"
+              }`}
+            >
+              {String(i + 1).padStart(2, "0")} {s}
+            </span>
+            {i < STAGES.length - 1 && <span className="text-[#2a2e38]">→</span>}
+          </span>
+        ))}
       </div>
 
       {/* SCAN TERMINAL */}
