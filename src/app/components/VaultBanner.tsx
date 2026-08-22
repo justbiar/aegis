@@ -33,6 +33,8 @@ interface NetworkVaultInfo {
   balance: number | null;
   rescuedTotal: number;
   rescuedCount: number;
+  requestedTotal: number;
+  requestedCount: number;
 }
 
 interface VaultRowProps {
@@ -53,9 +55,12 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
   const balance = info?.balance ?? null;
   const totalRescued = (info?.rescuedTotal ?? 0) + liveTotal;
   const totalCount = (info?.rescuedCount ?? 0) + liveCount;
+  const requestedTotal = info?.requestedTotal ?? 0;
+  const requestedCount = info?.requestedCount ?? 0;
 
   const animatedBalance = useCountUp(balance ?? 0);
   const animatedRescued = useCountUp(totalRescued);
+  const animatedRequested = useCountUp(requestedTotal);
 
   const statSize = compact ? "text-xl" : "text-3xl";
   const labelSize = compact ? "text-[10px]" : "text-[11px]";
@@ -130,6 +135,29 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
           {(ledgerAvailable || totalCount > 0) && (
             <p className="text-xs font-medium text-white/40 mt-0.5">
               {totalCount} {totalCount === 1 ? "account" : "accounts"}
+            </p>
+          )}
+        </div>
+
+        <div className="hidden sm:block w-px h-9 bg-white/10" />
+
+        <div className="text-left sm:text-right">
+          <p className={`${labelSize} font-semibold uppercase tracking-widest text-white/40 mb-0.5`}>
+            Requested
+          </p>
+          <p className={`hero-stat ${statSize} text-white leading-none`}>
+            {ledgerAvailable || requestedCount > 0 ? (
+              <>
+                {animatedRequested.toFixed(2)}{" "}
+                <span className="text-sm font-semibold text-white/40">STRK</span>
+              </>
+            ) : (
+              <span className="text-white/30 text-base font-medium">—</span>
+            )}
+          </p>
+          {(ledgerAvailable || requestedCount > 0) && (
+            <p className="text-xs font-medium text-white/40 mt-0.5">
+              {requestedCount} pending {requestedCount === 1 ? "claim" : "claims"}
             </p>
           )}
         </div>
