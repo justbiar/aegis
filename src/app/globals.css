@@ -136,7 +136,7 @@ input[type="range"]:focus-visible {
 }
 
 .ls-card {
-  @apply bg-white border border-ls-gray-200 rounded-2xl p-6
+  @apply bg-white border border-ls-gray-200 rounded-3xl p-7
     hover:shadow-md transition-shadow duration-300
     dark:bg-ls-gray-900 dark:border-ls-gray-700;
 }
@@ -198,8 +198,8 @@ input[type="range"]:focus-visible {
   @apply flex items-center gap-2 text-xs font-semibold text-ls-gray-500 dark:text-ls-gray-400 mb-2;
 }
 .step-number {
-  @apply flex items-center justify-center w-4 h-4 rounded-full shrink-0
-    bg-ls-gray-200 text-ls-gray-700 text-[10px] font-bold
+  @apply flex items-center justify-center w-5 h-5 rounded-full shrink-0
+    bg-ls-gray-200 text-ls-gray-700 text-[11px] font-bold
     dark:bg-ls-gray-700 dark:text-ls-gray-100;
 }
 
@@ -223,21 +223,21 @@ input[type="range"]:focus-visible {
    outline style used elsewhere) so status reads at a glance in a dense
    list, the way a reference identity-security dashboard's category
    badges do. */
-.tag-clean   { @apply bg-emerald-500 text-white px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider dark:bg-emerald-500 dark:text-black; }
-.tag-leak    { @apply bg-red-500 text-white px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider; }
-.tag-pending { @apply bg-ls-gray-200 text-ls-gray-700 px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider dark:bg-ls-gray-700 dark:text-ls-gray-100; }
-.tag-error   { @apply bg-amber-500 text-white px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider dark:text-black; }
-.tag-ready   { @apply bg-black text-white px-2.5 py-1 rounded-sm text-[10px] font-bold uppercase tracking-wider dark:bg-white dark:text-black; }
+.tag-clean   { @apply bg-emerald-500 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider dark:bg-emerald-500 dark:text-black; }
+.tag-leak    { @apply bg-red-500 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider; }
+.tag-pending { @apply bg-ls-gray-200 text-ls-gray-700 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider dark:bg-ls-gray-700 dark:text-ls-gray-100; }
+.tag-error   { @apply bg-amber-500 text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider dark:text-black; }
+.tag-ready   { @apply bg-black text-white px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider dark:bg-white dark:text-black; }
 
 /* Bordered stat box — label on top, big number below. Used wherever a
    handful of counts need to be scannable at a glance (registry coverage,
    vault stats), replacing an inline dot-separated list. */
 .stat-box {
-  @apply flex flex-col gap-0.5 px-4 py-2.5 rounded-lg border border-ls-gray-200 dark:border-ls-gray-800;
+  @apply flex flex-col gap-1 px-5 py-4 rounded-2xl border border-ls-gray-200 dark:border-ls-gray-800;
 }
 .stat-box-label {
   @apply text-[11px] font-semibold text-ls-gray-500 dark:text-ls-gray-400;
 }
 .stat-box-value {
-  @apply text-xl font-bold text-black dark:text-white tabular-nums leading-none;
+  @apply text-2xl font-bold text-black dark:text-white tabular-nums leading-none;
 }

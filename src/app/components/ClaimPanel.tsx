@@ -213,7 +213,7 @@ export function ClaimPanel() {
                       </p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="hero-stat text-2xl text-black dark:text-white leading-none">
+                      <p className="hero-stat text-3xl text-black dark:text-white leading-none">
                         {c.amount.toFixed(4)}
                       </p>
                       <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
@@ -305,7 +305,7 @@ export function ClaimPanel() {
                       <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">{c.network}</p>
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="hero-stat text-2xl text-black dark:text-white leading-none">
+                      <p className="hero-stat text-3xl text-black dark:text-white leading-none">
                         {c.amount.toFixed(4)}
                       </p>
                       <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
