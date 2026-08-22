@@ -22,10 +22,15 @@ html {
   --ink: #0d0e0e;
   --muted: #7d7d8a;
   --bg: #ffffff;
+  /* Page canvas — a soft sage so the white cards read as floating surfaces
+     (adapted from the reference dashboard's muted green-grey ground). */
+  --canvas: #d5ded8;
   --card: #ffffff;
   --line: #eaeaef;
   --inset: #f5f5f7;
   --inset-2: #ededf1;
+  /* Signature data accent: green → amber → red, the reference's chart spectrum. */
+  --spectrum: linear-gradient(90deg, #16b364 0%, #f5a623 52%, #f0555a 100%);
   --pink: #e56b43;
   --pink-soft: #fdefe9;
   --pink-soft-2: #f9ddd1;
@@ -40,6 +45,7 @@ html {
     --ink: #f0eff5;
     --muted: #93929f;
     --bg: #0c0b10;
+    --canvas: #0b100e;
     --card: #17161d;
     --line: #29282f;
     --inset: #1c1b22;
@@ -56,12 +62,26 @@ html {
 
 body {
   font-family: var(--font-body), 'Inter', system-ui, sans-serif;
-  background: #ffffff;
+  background: var(--canvas);
   color: #000000;
   min-height: 100vh;
   line-height: 1.6;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   text-rendering: optimizeLegibility;
+}
+
+/* Signature spectrum accents (green → amber → red) borrowed from the
+   reference dashboard's charts. */
+.spectrum-bar {
+  background: var(--spectrum);
+  border-radius: 999px;
+}
+.text-gradient-spectrum {
+  background: var(--spectrum);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: #16b364;
 }
 
 /* Modern display type: tighten large headings and let them wrap in balanced
@@ -73,7 +93,7 @@ body {
 
 @media (prefers-color-scheme: dark) {
   body {
-    background: #0a0a0a;
+    background: var(--canvas);
     color: #ffffff;
   }
 }

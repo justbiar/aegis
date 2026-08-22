@@ -63,7 +63,7 @@ export default function Page() {
   };
 
   return (
-    <div className="min-h-screen bg-white dark:bg-ls-black">
+    <div className="min-h-screen">
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
@@ -87,9 +87,12 @@ export default function Page() {
               transition={{ duration: 0.6 }}
               className="max-w-2xl"
             >
-              <div className="ls-badge mb-8">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                STRK20 Private Sprint
+              <div className="flex items-center gap-3 mb-8">
+                <div className="ls-badge">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                  STRK20 Private Sprint
+                </div>
+                <span className="spectrum-bar h-1 w-14 inline-block" aria-hidden />
               </div>
 
               <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-black dark:text-white leading-[0.95] tracking-tight mb-6">
@@ -159,7 +162,7 @@ export default function Page() {
       <ClaimPanel />
 
       {/* ── HOW IT WORKS ────────────────────────────────────────────────── */}
-      <section id="how-it-works" className="py-20 bg-ls-gray-50 dark:bg-ls-gray-950 border-y border-ls-gray-200 dark:border-ls-gray-800">
+      <section id="how-it-works" className="py-20">
         <div className="section-container">
           <div className="text-center mb-12">
             <p className="eyebrow">

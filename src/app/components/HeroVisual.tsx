@@ -44,6 +44,7 @@ export function HeroVisual() {
         style={{ background: "radial-gradient(circle at 30% 20%, var(--pink-soft-2), transparent 65%)" }}
       />
       <div className="ls-card p-6 sm:p-7">
+        <div className="spectrum-bar h-1 w-full mb-5" aria-hidden />
         <div className="flex items-center justify-between mb-6">
           <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400">
             How a rescue moves
