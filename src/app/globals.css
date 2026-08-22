@@ -22,9 +22,9 @@ html {
   --ink: #0d0e0e;
   --muted: #7d7d8a;
   --bg: #ffffff;
-  /* Page canvas — a soft sage so the white cards read as floating surfaces
-     (adapted from the reference dashboard's muted green-grey ground). */
-  --canvas: #d5ded8;
+  /* Page canvas — a muted sage so the white cards read as floating surfaces
+     (adapted from the reference dashboard's green-grey ground). */
+  --canvas: #bcccc4;
   --card: #ffffff;
   --line: #eaeaef;
   --inset: #f5f5f7;
