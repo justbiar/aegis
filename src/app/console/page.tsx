@@ -439,7 +439,7 @@ export default function ConsolePage() {
           )}
         </div>
         <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#12151c] text-[10px] text-[#6b7080] tracking-wider">
-          SCAN ENGINE · GITHUB ACTIONS{latest ? ` · last ${ago(latest.ts)}` : ""}
+          SCAN ENGINE · LIVE{latest ? ` · last ${ago(latest.ts)}` : ""}
         </span>
         <span className="text-[#6b7080] ml-auto">
           scanned <span className="text-[#c9ccd6]">{latest?.scanned ?? "—"}</span> · clean{" "}
