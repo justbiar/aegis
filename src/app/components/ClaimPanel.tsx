@@ -384,8 +384,12 @@ export function ClaimPanel() {
                                 onPaid={load}
                               />
                             ) : (
-                              <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-center gap-1.5">
-                                <Clock3 size={13} /> Waiting for the Aegis safe wallet to send this out privately.
+                              <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-start gap-1.5">
+                                <Clock3 size={13} className="mt-0.5 shrink-0" />
+                                <span>
+                                  Manual payout — whoever holds the Aegis safe wallet sends this
+                                  privately (no automatic transfer). Connect it above to pay it out.
+                                </span>
                               </p>
                             )}
                           </div>
