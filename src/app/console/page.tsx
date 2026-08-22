@@ -333,6 +333,10 @@ export default function ConsolePage() {
         <span className="text-[#f0f0f5] font-bold">
           EPOCH <span className="text-[#e56b43]">#{latest?.n ?? "—"}</span>
         </span>
+        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-[#12151c] text-[10px] text-[#6b7080] tracking-wider">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#2fbf85] animate-pulse" />
+          SCAN ENGINE · GITHUB ACTIONS{latest ? ` · last ${ago(latest.ts)}` : ""}
+        </span>
         <span className="text-[#6b7080]">·</span>
         <div className="flex items-center gap-1.5 flex-wrap">
           {STAGES.map((s, i) => (
