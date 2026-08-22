@@ -53,6 +53,7 @@ interface Claim {
   githubLogin?: string;
   paidTxHash?: string;
   paidPrivately?: boolean;
+  paidNet?: number;
 }
 
 function TipSlider({ value, onChange, amount }: { value: number; onChange: (v: number) => void; amount: number }) {
@@ -476,6 +477,20 @@ export function ClaimPanel() {
                           )}
                         </div>
                       </div>
+
+                      {c.status === "paid" && (
+                        <div className="mt-4 rounded-xl bg-ls-gray-50 dark:bg-ls-gray-800/60 border border-ls-gray-200 dark:border-ls-gray-700 px-4 py-3 space-y-1.5">
+                          {typeof c.paidNet === "number" && (
+                            <p className="text-sm text-black dark:text-white">
+                              <span className="font-semibold text-emerald-600 dark:text-emerald-400">{c.paidNet.toFixed(4)} STRK</span> sent to your wallet
+                              <span className="text-ls-gray-500 dark:text-ls-gray-400"> · after {c.tipPercent}% tip + network fee (of {c.amount.toFixed(4)})</span>
+                            </p>
+                          )}
+                          <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
+                            Paid as a private transfer — it lands in your <span className="font-semibold">shielded</span> balance, not your public one. Open your wallet&apos;s privacy / shielded section to see it, then <span className="font-semibold">Unshield</span> to spend it.
+                          </p>
+                        </div>
+                      )}
 
                       {c.status === "pending" && (
                         <div className="mt-4 space-y-3">

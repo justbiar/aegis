@@ -157,6 +157,7 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
             network: r.claim.network,
             txHash: txH,
             payerAddress: connectedAddress,
+            net: r.net,
           }),
         })
       )

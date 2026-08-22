@@ -46,6 +46,7 @@ export async function POST(req: NextRequest) {
   const repoUrl = body?.repoUrl as string | undefined;
   const network = body?.network as Network | undefined;
   const txHash = body?.txHash as string | undefined;
+  const net = typeof body?.net === "number" ? body.net : undefined;
   if (!repoUrl || !network || !txHash || (network !== "mainnet" && network !== "sepolia")) {
     return NextResponse.json({ error: "repoUrl, a valid network and txHash are required" }, { status: 400 });
   }
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Could not look up transaction: ${err?.message ?? "unknown error"}` }, { status: 400 });
   }
 
-  const marked = await markClaimPaid(repoUrl, network, txHash, true);
+  const marked = await markClaimPaid(repoUrl, network, txHash, true, net);
   if (!marked) {
     return NextResponse.json({ error: "No matching pending claim found" }, { status: 404 });
   }

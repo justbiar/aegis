@@ -29,6 +29,10 @@ export interface ClaimRecord {
   // = the automatic plain payout in payout.ts. Both leave the recipient
   // with the same STRK, just with different on-chain visibility.
   paidPrivately?: boolean;
+  // Net STRK actually sent to the recipient at payout (amount − tip − the
+  // claim's share of the pool fee). Stored so the paid card can show what the
+  // owner really received, not just the gross rescued amount.
+  paidNet?: number;
   // % of `amount` withheld at payout time (stays with the safe wallet) —
   // covers the network fee the payout itself costs to send, and doubles as
   // an opt-in "support the project" amount above that. Chosen by the
@@ -117,6 +121,7 @@ export async function markClaimPaid(
   network: Network,
   paidTxHash: string,
   paidPrivately: boolean,
+  paidNet?: number,
 ): Promise<boolean> {
   const claims = await getClaims();
   const claim = claims.find(
@@ -127,6 +132,7 @@ export async function markClaimPaid(
   claim.paidTxHash = paidTxHash;
   claim.paidAt = Date.now();
   claim.paidPrivately = paidPrivately;
+  if (typeof paidNet === "number" && Number.isFinite(paidNet)) claim.paidNet = paidNet;
   await saveClaims(claims);
   return true;
 }
