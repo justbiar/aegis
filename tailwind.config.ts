@@ -8,9 +8,9 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["Montserrat", "system-ui", "sans-serif"],
-        mono: ["JetBrains Mono", "Fira Code", "Courier New", "monospace"],
-        display: ["var(--font-display)", "Montserrat", "system-ui", "sans-serif"],
+        sans: ["var(--font-body)", "Inter", "system-ui", "sans-serif"],
+        mono: ["var(--font-mono-ui)", "Space Mono", "ui-monospace", "monospace"],
+        display: ["var(--font-display)", "Space Grotesk", "system-ui", "sans-serif"],
       },
       colors: {
         ls: {

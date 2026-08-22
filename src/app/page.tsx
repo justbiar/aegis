@@ -77,7 +77,8 @@ export default function Page() {
         />
 
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
-      <section className="pt-32 pb-20">
+      <section className="relative pt-32 pb-20">
+        <div className="ambient-glow" aria-hidden />
         <div className="section-container">
           <div className="grid lg:grid-cols-[1fr_360px] gap-16 items-center">
             <motion.div
@@ -93,7 +94,7 @@ export default function Page() {
 
               <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-black dark:text-white leading-[0.95] tracking-tight mb-6">
                 Whitehat rescue for{" "}
-                <span style={{ color: "var(--pink)" }}>leaked keys</span>
+                <span className="text-gradient-accent">leaked keys</span>
               </h1>
 
               <p className="text-lg text-ls-gray-500 dark:text-ls-gray-400 leading-relaxed mb-10 max-w-xl">
@@ -124,9 +125,9 @@ export default function Page() {
                   href="https://github.com/justbiar/aegis"
                   target="_blank"
                   rel="noreferrer"
-                  className="btn-ghost text-base px-8 py-3.5"
+                  className="link-arrow text-sm text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white ml-1"
                 >
-                  <ExternalLink size={16} /> View source
+                  <ExternalLink size={15} /> View source
                 </a>
               </div>
 

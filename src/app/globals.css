@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -57,11 +55,20 @@ html {
 }
 
 body {
-  font-family: 'Montserrat', system-ui, sans-serif;
+  font-family: var(--font-body), 'Inter', system-ui, sans-serif;
   background: #ffffff;
   color: #000000;
   min-height: 100vh;
   line-height: 1.6;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  text-rendering: optimizeLegibility;
+}
+
+/* Modern display type: tighten large headings and let them wrap in balanced
+   lines so a stray last word never dangles on its own row. */
+.font-display {
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -92,6 +99,60 @@ input[type="range"]:focus-visible {
   outline-offset: 4px;
 }
 
+/* ── Modern range slider ─────────────────────────────────────────────────
+   The native control reads as an old form widget; this gives it a soft
+   rounded track and a prominent, easy-to-grab thumb that lifts on hover —
+   the same tactile language as the buttons. Styled cross-browser (WebKit +
+   Firefox) since there's only the one slider type in the app. */
+input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 24px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--inset-2);
+}
+input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--inset-2);
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  margin-top: -6px;
+  border-radius: 999px;
+  background: var(--ink);
+  border: 3px solid var(--card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="range"]::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 999px;
+  background: var(--ink);
+  border: 3px solid var(--card);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+input[type="range"]:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+input[type="range"]:hover::-moz-range-thumb {
+  transform: scale(1.12);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(0.96); }
+input[type="range"]:active::-moz-range-thumb { transform: scale(0.96); }
+
 /* Skip-to-content link — hidden until keyboard-focused, first tab stop. */
 .skip-link {
   @apply fixed top-3 left-3 z-[100] -translate-y-16 focus:translate-y-0
@@ -102,17 +163,23 @@ input[type="range"]:focus-visible {
 /* ── Lightspark-style utilities, dark-mode aware ─────────────────────────── */
 
 .btn-primary {
-  @apply inline-flex items-center gap-2 px-6 py-3 bg-black text-white
+  @apply inline-flex items-center justify-center gap-2 px-6 py-3 bg-black text-white
     font-semibold text-sm rounded-xl
-    hover:bg-ls-gray-800 transition-colors duration-200
-    dark:bg-white dark:text-black dark:hover:bg-ls-gray-200;
+    shadow-[0_1px_2px_rgba(0,0,0,0.15),0_6px_16px_-8px_rgba(0,0,0,0.35)]
+    hover:bg-ls-gray-800 hover:-translate-y-0.5
+    hover:shadow-[0_2px_4px_rgba(0,0,0,0.18),0_12px_28px_-10px_rgba(0,0,0,0.45)]
+    active:translate-y-0 active:shadow-[0_1px_2px_rgba(0,0,0,0.15)]
+    transition-all duration-200 ease-out
+    dark:bg-white dark:text-black dark:hover:bg-ls-gray-200 dark:shadow-none;
 }
 
 .btn-ghost {
-  @apply inline-flex items-center gap-2 px-6 py-3 bg-transparent text-black
+  @apply inline-flex items-center justify-center gap-2 px-6 py-3 bg-transparent text-black
     font-semibold text-sm border border-ls-gray-200 rounded-xl
-    hover:bg-ls-gray-50 transition-colors duration-200
-    dark:text-white dark:border-ls-gray-600 dark:hover:bg-ls-gray-800;
+    hover:bg-ls-gray-50 hover:border-ls-gray-300 hover:-translate-y-0.5
+    active:translate-y-0
+    transition-all duration-200 ease-out
+    dark:text-white dark:border-ls-gray-600 dark:hover:bg-ls-gray-800 dark:hover:border-ls-gray-500;
 }
 
 .link-arrow {
@@ -188,6 +255,31 @@ input[type="range"]:focus-visible {
   @apply font-bold tabular-nums;
 }
 
+/* Accent headline word — a warm gradient that drifts slowly, so the key
+   phrase reads as the focal point without a loud color block. Falls back to
+   the flat accent color where background-clip:text isn't supported. */
+.text-gradient-accent {
+  color: var(--pink);
+  background: linear-gradient(100deg, var(--pink) 0%, #f0946f 45%, var(--pink-text) 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: accent-drift 6s ease-in-out infinite alternate;
+}
+@keyframes accent-drift {
+  from { background-position: 0% center; }
+  to { background-position: 100% center; }
+}
+@media (prefers-color-scheme: dark) {
+  .text-gradient-accent {
+    background: linear-gradient(100deg, var(--pink) 0%, #f0946f 50%, #e56b43 100%);
+    background-size: 200% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+  }
+}
+
 /* Small tracked label sitting above a section heading — was duplicated
    verbatim in page.tsx (x2) and ClaimPanel.tsx. */
 .eyebrow {
@@ -205,6 +297,41 @@ input[type="range"]:focus-visible {
   @apply flex items-center justify-center w-5 h-5 rounded-full shrink-0
     bg-ls-gray-200 text-ls-gray-700 text-[11px] font-bold
     dark:bg-ls-gray-700 dark:text-ls-gray-100;
+}
+
+/* Ambient radial glow — a soft, theme-aware light source dropped behind a
+   section to give the flat page depth without a hard gradient band. Sits on
+   its own layer (-z-10) and never intercepts clicks. */
+.ambient-glow {
+  @apply pointer-events-none absolute inset-0 -z-10 overflow-hidden;
+}
+.ambient-glow::before {
+  content: '';
+  position: absolute;
+  top: -20%;
+  left: 50%;
+  width: 60rem;
+  height: 40rem;
+  transform: translateX(-50%);
+  background: radial-gradient(50% 50% at 50% 50%, var(--pink-soft-2), transparent 70%);
+  opacity: 0.55;
+  filter: blur(40px);
+}
+@media (prefers-color-scheme: dark) {
+  .ambient-glow::before { opacity: 0.4; }
+}
+
+/* Respect users who ask for less motion: keep state changes instant and drop
+   the hover lifts / looping animations rather than animating them. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  .btn-primary:hover,
+  .btn-ghost:hover { transform: none; }
 }
 
 .ls-table th {
