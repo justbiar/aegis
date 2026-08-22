@@ -190,6 +190,19 @@ input[type="range"]:focus-visible {
   @apply text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-3;
 }
 
+/* Numbered step label — marks which half of a two-actor flow a block
+   belongs to (e.g. "1 You set the address" vs "2 The safe wallet sends
+   it"), so the actor boundary is visible right where the confusion
+   happens instead of only explained in prose elsewhere. */
+.step-label {
+  @apply flex items-center gap-2 text-xs font-semibold text-ls-gray-500 dark:text-ls-gray-400 mb-2;
+}
+.step-number {
+  @apply flex items-center justify-center w-4 h-4 rounded-full shrink-0
+    bg-ls-gray-200 text-ls-gray-700 text-[10px] font-bold
+    dark:bg-ls-gray-700 dark:text-ls-gray-100;
+}
+
 .ls-table th {
   @apply text-xs font-semibold text-ls-gray-500 uppercase tracking-wide
     px-4 py-3 text-left border-b border-ls-gray-200 bg-ls-gray-50

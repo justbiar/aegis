@@ -323,6 +323,9 @@ export function ClaimPanel() {
                   </div>
                   {c.status === "pending" && (
                     <>
+                      <p className="step-label">
+                        <span className="step-number">1</span> You choose where it goes
+                      </p>
                       <div className="flex flex-col sm:flex-row gap-2 mb-3">
                         <input
                           type="text"
@@ -349,9 +352,15 @@ export function ClaimPanel() {
                         amount={c.amount}
                       />
                       {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
+
+                      <div className="ls-divider my-4" />
+
+                      <p className="step-label">
+                        <span className="step-number">2</span> The Aegis safe wallet sends it
+                      </p>
                       {hasUnsavedEdits ? (
-                        <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 mt-3">
-                          Click Update to save these changes before paying.
+                        <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
+                          Click Update above to save these changes before paying.
                         </p>
                       ) : (
                         <PayClaimInline
