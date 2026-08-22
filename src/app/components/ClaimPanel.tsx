@@ -8,6 +8,7 @@ import { useStoreWallet } from "./Wallet/walletContext";
 import { useFrontendProvider } from "./client/provider/providerContext";
 import SelectWallet from "./client/WalletHandle/SelectWallet";
 import PayClaimsBatch, { computePayouts, type BatchClaim } from "./client/WalletHandle/PayClaimsBatch";
+import RegisterWallet from "./client/WalletHandle/RegisterWallet";
 
 const DEFAULT_TIP_PERCENT = 2;
 // GitHub login that, combined with the safe wallet, unlocks the admin payout
@@ -288,6 +289,8 @@ export function ClaimPanel() {
           {header}
           <NetworkToggle selected={selectedNetwork} onSelect={(n) => setFrontendProviderIndex(NETWORK_INDEX[n])} count={adminCount} />
 
+          <RegisterWallet network={selectedNetwork} onRegistered={loadPending} />
+
           {adminForNet.length === 0 ? (
             <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
               No pending requests on <span className="font-semibold capitalize">{selectedNetwork}</span>.
@@ -386,6 +389,10 @@ export function ClaimPanel() {
         ) : (
           <>
             <NetworkToggle selected={selectedNetwork} onSelect={(n) => setFrontendProviderIndex(NETWORK_INDEX[n])} count={netCount} />
+
+            {/* If the claimant's receiving wallet isn't registered with the pool,
+                let them register it here so the payout can actually reach them. */}
+            <RegisterWallet network={selectedNetwork} onRegistered={loadMine} />
 
             {visibleClaimable.length === 0 && visibleClaims.length === 0 ? (
               <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">

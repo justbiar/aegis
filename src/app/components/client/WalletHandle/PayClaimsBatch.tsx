@@ -180,7 +180,7 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
         </p>
       ) : senderReg === false ? (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          This safe wallet isn&apos;t registered with the {network} pool yet — do one Shield from it first (Balances/Shield),
+          This safe wallet isn&apos;t registered with the {network} pool yet — use the “Register with the pool” button above,
           then you can pay these out.
         </p>
       ) : checking && senderReg === null ? (
