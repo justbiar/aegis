@@ -56,3 +56,7 @@ A1priv/A1priv.ts
 # tracked; `git add README.md` still works despite this wildcard)
 *.md
 .claude/
+
+# local-only debug panel (Shield/Send/Unshield/Echo/Balances/Pay) — never
+# meant for production, stays off Vercel entirely
+/src/app/wallet/
