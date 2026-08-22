@@ -300,14 +300,20 @@ export function ClaimPanel() {
                   );
                 })}
 
-                {/* Slim connect-the-safe-wallet hint, only when there's a pending
-                    payout and the safe wallet isn't the one connected. */}
+                {/* Slim safe-wallet hint, only when there's a pending payout and
+                    the safe wallet isn't the one connected. Reworded so it never
+                    contradicts an already-connected (claimant) wallet: it either
+                    prompts to connect the safe wallet, or offers to switch to it. */}
                 {visibleClaims.some((c) => c.status === "pending") && !isSafeWallet && (
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 px-4 py-3 rounded-2xl border border-dashed border-ls-gray-300 dark:border-ls-gray-700">
                     <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
-                      Payouts are sent by the Aegis safe wallet — connect it to pay the pending claims below.
+                      {isWalletConnected ? (
+                        <>Only the <span className="font-semibold text-black dark:text-white">Aegis safe wallet</span> can pay these out — switch to it if you're paying.</>
+                      ) : (
+                        <>Paying out is done by the <span className="font-semibold text-black dark:text-white">Aegis safe wallet</span>. Connect it only if you're the one paying.</>
+                      )}
                     </p>
-                    <SelectWallet variant="nav" />
+                    {isWalletConnected ? <SelectWallet variant="change" /> : <SelectWallet variant="nav" />}
                   </div>
                 )}
 
@@ -365,7 +371,9 @@ export function ClaimPanel() {
                               >
                                 {submitting === key ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Save changes</>}
                               </button>
-                            ) : (
+                            ) : isSafeWallet ? (
+                              // Only the safe-wallet operator sees the actual pay
+                              // control — the claimant has already done their part.
                               <PayClaimInline
                                 repoUrl={c.repoUrl}
                                 network={c.network}
@@ -375,6 +383,10 @@ export function ClaimPanel() {
                                 isSafeWallet={isSafeWallet}
                                 onPaid={load}
                               />
+                            ) : (
+                              <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-center gap-1.5">
+                                <Clock3 size={13} /> Waiting for the Aegis safe wallet to send this out privately.
+                              </p>
                             )}
                           </div>
                         </div>
