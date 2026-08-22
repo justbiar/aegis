@@ -4,6 +4,10 @@ import { getLedger } from "@/lib/ledger";
 import { getClaims, recordClaimRequest, updatePendingClaim, type ClaimRecord } from "@/lib/claims";
 
 const DEFAULT_TIP_PERCENT = 2;
+// Only this GitHub login (the safe-wallet operator) may read the full pending
+// queue, which maps each claimant's login to their payout address — data that
+// a private payout otherwise never exposes on-chain.
+const ADMIN_LOGIN = (process.env.NEXT_PUBLIC_ADMIN_GITHUB_LOGIN ?? "justbiar").toLowerCase();
 
 function clampTipPercent(raw: unknown): number {
   const n = typeof raw === "number" ? raw : DEFAULT_TIP_PERCENT;
@@ -26,18 +30,22 @@ function repoOwner(repoUrl: string): string | null {
 // (ledger total for repos they own, minus anything already claimed) plus
 // their existing claim records.
 // GET ?scope=pending — every pending claim, for the operator payout panel.
-// Not auth-gated: nothing here is sensitive, it's all about to be public
-// on-chain the moment it's paid.
+// Admin-only: it maps claimant logins to payout addresses, which a private
+// payout keeps off-chain, so it must not be world-readable.
 export async function GET(req: NextRequest) {
   const scope = req.nextUrl.searchParams.get("scope") ?? "mine";
   const claims = await getClaims();
 
+  const session = await auth();
+  const login = (session?.user as any)?.login as string | undefined;
+
   if (scope === "pending") {
+    if (!login || login.toLowerCase() !== ADMIN_LOGIN) {
+      return NextResponse.json({ error: "Operator only" }, { status: 403 });
+    }
     return NextResponse.json({ claims: claims.filter((c) => c.status === "pending") });
   }
 
-  const session = await auth();
-  const login = (session?.user as any)?.login as string | undefined;
   if (!login) return NextResponse.json({ claimable: [], claims: [] });
 
   const ledger = await getLedger();
