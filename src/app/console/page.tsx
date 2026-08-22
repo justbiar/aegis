@@ -1,0 +1,512 @@
+"use client";
+
+// Live "mission control" console. Real data (registry repos, vault totals,
+// epoch history) drives it; the asset-transfer flows are deliberately private —
+// masked amounts, no addresses — they're visual signal that the agent is
+// sweeping funds into the shielded pool, not a public from→to record.
+//
+// Loading this page is read-only (registry / vault / epochs). It never calls
+// scan-registry, so it never triggers a rescue.
+
+import { useEffect, useRef, useState } from "react";
+
+interface RegistryEntry {
+  repo_url: string;
+  name?: string;
+  category?: string;
+}
+interface NetInfo {
+  balance: number | null;
+  rescuedTotal: number;
+  rescuedCount: number;
+  requestedTotal: number;
+  requestedCount: number;
+}
+interface Epoch {
+  n: number;
+  ts: number;
+  scanned: number;
+  clean: number;
+  exposures: number;
+  rescued: number;
+  rescuedStrk: number;
+  errors: number;
+  durationMs: number;
+}
+
+const STAGES = ["DETECT", "DERIVE", "CHECK", "SHIELD", "CLAIM"] as const;
+const CLUSTER_COLORS = ["#22d3ee", "#2fbf85", "#a78bfa", "#f5a623", "#f0555a", "#e56b43", "#38bdf8"];
+
+function useClock() {
+  const [t, setT] = useState("--:--:--");
+  useEffect(() => {
+    const tick = () => setT(new Date().toISOString().slice(11, 19));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+  return t;
+}
+
+// ── Canvas graph: repo nodes clustered by category, flowing masked transfers
+//    into a central shielded-vault node ────────────────────────────────────
+function GraphCanvas({ entries, rescueTick }: { entries: RegistryEntry[]; rescueTick: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stateRef = useRef<any>(null);
+  const rescueRef = useRef(0);
+
+  useEffect(() => {
+    rescueRef.current = rescueTick;
+  }, [rescueTick]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    // Cluster repos by category.
+    const cats = Array.from(new Set(entries.map((e) => e.category ?? "Other")));
+    const catIndex = new Map(cats.map((c, i) => [c, i]));
+
+    let W = 0;
+    let H = 0;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const resize = () => {
+      const r = canvas.getBoundingClientRect();
+      W = r.width;
+      H = r.height;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      buildNodes();
+    };
+
+    type Node = { bx: number; by: number; x: number; y: number; ci: number; ph: number; hot: number };
+    let nodes: Node[] = [];
+    const buildNodes = () => {
+      const cx = W / 2;
+      const cy = H / 2;
+      const ring = Math.min(W, H) * 0.36;
+      nodes = entries.slice(0, 130).map((e, i) => {
+        const ci = catIndex.get(e.category ?? "Other") ?? 0;
+        const ca = (ci / Math.max(1, cats.length)) * Math.PI * 2;
+        const clx = cx + Math.cos(ca) * ring;
+        const cly = cy + Math.sin(ca) * ring;
+        const a = (i * 2.399963) % (Math.PI * 2); // golden-angle scatter
+        const rr = 26 + ((i * 37) % 60);
+        const bx = clx + Math.cos(a) * rr;
+        const by = cly + Math.sin(a) * rr;
+        return { bx, by, x: bx, y: by, ci, ph: Math.random() * Math.PI * 2, hot: 0 };
+      });
+    };
+
+    type Particle = { t: number; sx: number; sy: number; cx: number; cy: number; ex: number; ey: number; hue: string };
+    let particles: Particle[] = [];
+    const spawnParticle = (fromRescue: boolean) => {
+      if (nodes.length === 0) return;
+      const n = nodes[Math.floor(Math.random() * nodes.length)];
+      n.hot = 1;
+      const ex = W / 2;
+      const ey = H / 2;
+      const mx = (n.x + ex) / 2 + (Math.random() - 0.5) * 120;
+      const my = (n.y + ey) / 2 + (Math.random() - 0.5) * 120;
+      particles.push({
+        t: 0,
+        sx: n.x,
+        sy: n.y,
+        cx: mx,
+        cy: my,
+        ex,
+        ey,
+        hue: fromRescue ? "#2fbf85" : "#22d3ee",
+      });
+    };
+
+    let raf = 0;
+    let last = performance.now();
+    let sweep = 0;
+    let lastRescue = rescueRef.current;
+    let ambientTimer = 0;
+
+    const frame = (now: number) => {
+      const dt = Math.min(50, now - last);
+      last = now;
+      sweep += dt * 0.00018;
+      ambientTimer += dt;
+
+      // New rescue reported → burst of green private transfers.
+      if (rescueRef.current !== lastRescue) {
+        lastRescue = rescueRef.current;
+        for (let i = 0; i < 6; i++) setTimeout(() => spawnParticle(true), i * 120);
+      }
+      // Ambient cyan "scanning" transfers so it always feels alive.
+      if (ambientTimer > 900) {
+        ambientTimer = 0;
+        spawnParticle(false);
+      }
+
+      ctx.clearRect(0, 0, W, H);
+      const cx = W / 2;
+      const cy = H / 2;
+
+      // Edges: faint lines from each node toward the vault, brighter as the
+      // sweep beam passes its angle.
+      for (const n of nodes) {
+        const ang = Math.atan2(n.y - cy, n.x - cx);
+        const beam = 0.5 + 0.5 * Math.cos(ang - sweep * Math.PI * 2);
+        ctx.strokeStyle = `rgba(120,140,170,${0.03 + beam * 0.06})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(n.x, n.y);
+        ctx.lineTo(cx, cy);
+        ctx.stroke();
+      }
+
+      // Nodes.
+      for (const n of nodes) {
+        n.ph += dt * 0.001;
+        n.x = n.bx + Math.cos(n.ph) * 3;
+        n.y = n.by + Math.sin(n.ph * 1.3) * 3;
+        n.hot *= 0.96;
+        const base = CLUSTER_COLORS[n.ci % CLUSTER_COLORS.length];
+        const r = 2.2 + n.hot * 3.5;
+        if (n.hot > 0.05) {
+          ctx.shadowColor = base;
+          ctx.shadowBlur = 12 * n.hot;
+        }
+        ctx.fillStyle = base;
+        ctx.globalAlpha = 0.55 + n.hot * 0.45;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      }
+
+      // Particles (masked private transfers) travelling to the vault.
+      particles = particles.filter((p) => p.t < 1);
+      for (const p of particles) {
+        p.t += dt * 0.0009;
+        const u = p.t;
+        const iu = 1 - u;
+        const x = iu * iu * p.sx + 2 * iu * u * p.cx + u * u * p.ex;
+        const y = iu * iu * p.sy + 2 * iu * u * p.cy + u * u * p.ey;
+        ctx.shadowColor = p.hue;
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = p.hue;
+        ctx.globalAlpha = Math.sin(u * Math.PI);
+        ctx.beginPath();
+        ctx.arc(x, y, 2.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 1;
+      }
+
+      // Central shielded vault node.
+      const pulse = 1 + Math.sin(now * 0.003) * 0.08;
+      ctx.shadowColor = "#e56b43";
+      ctx.shadowBlur = 26;
+      ctx.fillStyle = "#e56b43";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 9 * pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = "rgba(229,107,67,0.35)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 16 + Math.sin(now * 0.003) * 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "rgba(230,230,240,0.8)";
+      ctx.font = "600 10px 'Space Mono', monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("SHIELDED VAULT", cx, cy + 34);
+
+      raf = requestAnimationFrame(frame);
+    };
+
+    resize();
+    window.addEventListener("resize", resize);
+    raf = requestAnimationFrame(frame);
+    stateRef.current = { spawnParticle };
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", resize);
+    };
+  }, [entries]);
+
+  return <canvas ref={canvasRef} className="w-full h-full block" />;
+}
+
+const fmt = (n: number, d = 2) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+const ago = (ts: number) => {
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+};
+
+export default function ConsolePage() {
+  const clock = useClock();
+  const [entries, setEntries] = useState<RegistryEntry[]>([]);
+  const [mainnet, setMainnet] = useState<NetInfo | null>(null);
+  const [sepolia, setSepolia] = useState<NetInfo | null>(null);
+  const [epochs, setEpochs] = useState<Epoch[]>([]);
+  const [stage, setStage] = useState(0);
+  const rescueTickRef = useRef(0);
+  const [rescueTick, setRescueTick] = useState(0);
+  const lastEpochN = useRef<number>(-1);
+
+  useEffect(() => {
+    fetch("/api/registry").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])).catch(() => {});
+    const loadVault = () =>
+      fetch("/api/vault").then((r) => r.json()).then((d) => {
+        setMainnet(d.mainnet ?? null);
+        setSepolia(d.sepolia ?? null);
+      }).catch(() => {});
+    const loadEpochs = () =>
+      fetch("/api/epochs?limit=160").then((r) => r.json()).then((d) => {
+        const es: Epoch[] = d.epochs ?? [];
+        setEpochs(es);
+        const latest = es[es.length - 1];
+        if (latest && latest.n !== lastEpochN.current) {
+          if (lastEpochN.current !== -1 && latest.rescued > 0) {
+            rescueTickRef.current++;
+            setRescueTick(rescueTickRef.current);
+          }
+          lastEpochN.current = latest.n;
+        }
+      }).catch(() => {});
+    loadVault();
+    loadEpochs();
+    const v = setInterval(loadVault, 20000);
+    const e = setInterval(loadEpochs, 8000);
+    return () => {
+      clearInterval(v);
+      clearInterval(e);
+    };
+  }, []);
+
+  // Pipeline stepper heartbeat.
+  useEffect(() => {
+    const id = setInterval(() => setStage((s) => (s + 1) % STAGES.length), 1400);
+    return () => clearInterval(id);
+  }, []);
+
+  const latest = epochs[epochs.length - 1];
+  const rescuedTotal = (mainnet?.rescuedTotal ?? 0) + (sepolia?.rescuedTotal ?? 0);
+  const rescuedCount = (mainnet?.rescuedCount ?? 0) + (sepolia?.rescuedCount ?? 0);
+  const pendingCount = (mainnet?.requestedCount ?? 0) + (sepolia?.requestedCount ?? 0);
+  const pendingTotal = (mainnet?.requestedTotal ?? 0) + (sepolia?.requestedTotal ?? 0);
+  const totalExposures = epochs.reduce((s, e) => s + e.exposures, 0);
+
+  // Activity feed (newest first), amounts on rescues masked (private).
+  const feed = [...epochs].reverse().slice(0, 14);
+
+  return (
+    <div className="min-h-screen bg-[#06070a] text-[#c9ccd6] font-mono text-[12px] leading-tight px-3 sm:px-5 py-4 selection:bg-[#22d3ee] selection:text-black">
+      {/* TOP BAR */}
+      <div className="flex flex-wrap items-center justify-between gap-3 border border-[#1a1d26] rounded-lg px-4 py-3 bg-[#0a0c11]">
+        <a href="/" className="flex items-center gap-3 group">
+          <div className="w-8 h-8 rounded bg-[#e56b43] flex items-center justify-center text-black font-bold group-hover:opacity-80 transition-opacity">A</div>
+          <div>
+            <p className="text-[#f0f0f5] font-bold tracking-wide text-sm">AEGIS · WHITEHAT RESCUE AGENT</p>
+            <p className="text-[#6b7080] text-[10px] tracking-widest uppercase">Starknet · STRK20 shielded pool · ← back to site</p>
+          </div>
+        </a>
+        <div className="flex items-center gap-5">
+          <Stat label="Repos" value={String(entries.length)} tone="#22d3ee" />
+          <Stat label="Rescued" value={`${fmt(rescuedTotal)}`} sub="STRK" tone="#2fbf85" />
+          <Stat label="Accounts" value={String(rescuedCount)} tone="#a78bfa" />
+          <Stat label="Pending" value={`${fmt(pendingTotal)}`} sub="STRK" tone="#f5a623" />
+          <div className="text-right">
+            <p className="text-[#f0f0f5] font-bold tabular-nums text-sm">{clock}</p>
+            <p className="text-[#6b7080] text-[10px] flex items-center gap-1 justify-end">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#2fbf85] animate-pulse" /> UTC
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {/* EPOCH / PIPELINE STRIP */}
+      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border border-[#1a1d26] rounded-lg px-4 py-2.5 bg-[#0a0c11]">
+        <span className="text-[#f0f0f5] font-bold">
+          EPOCH <span className="text-[#e56b43]">#{latest?.n ?? "—"}</span>
+        </span>
+        <span className="text-[#6b7080]">·</span>
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {STAGES.map((s, i) => (
+            <span key={s} className="flex items-center gap-1.5">
+              <span
+                className={`px-2 py-0.5 rounded text-[10px] tracking-wider transition-colors duration-300 ${
+                  i === stage
+                    ? "bg-[#22d3ee] text-black font-bold"
+                    : "bg-[#12151c] text-[#6b7080]"
+                }`}
+              >
+                {String(i + 1).padStart(2, "0")} {s}
+              </span>
+              {i < STAGES.length - 1 && <span className="text-[#2a2e38]">→</span>}
+            </span>
+          ))}
+        </div>
+        <span className="text-[#6b7080] ml-auto">
+          scanned <span className="text-[#c9ccd6]">{latest?.scanned ?? "—"}</span> · clean{" "}
+          <span className="text-[#2fbf85]">{latest?.clean ?? "—"}</span> · exposure{" "}
+          <span className="text-[#f0555a]">{latest?.exposures ?? 0}</span> · rescued{" "}
+          <span className="text-[#e56b43]">{latest?.rescued ?? 0}</span>
+        </span>
+      </div>
+
+      {/* MAIN GRID */}
+      <div className="mt-3 grid grid-cols-1 lg:grid-cols-[220px_1fr_240px] gap-3">
+        {/* LEFT PANELS */}
+        <div className="space-y-3">
+          <Panel title="NETWORKS">
+            <NetRow label="MAINNET" info={mainnet} tone="#2fbf85" />
+            <div className="h-px bg-[#1a1d26] my-2" />
+            <NetRow label="SEPOLIA" info={sepolia} tone="#f5a623" />
+          </Panel>
+          <Panel title="EXPOSURE LEDGER">
+            <BigNum value={totalExposures} label="exposures seen" tone="#f0555a" />
+            <Bar label="Rescued" value={rescuedCount} max={Math.max(1, rescuedCount + totalExposures)} tone="#2fbf85" />
+            <Bar label="Pending" value={pendingCount} max={Math.max(1, rescuedCount + totalExposures)} tone="#f5a623" />
+            <Bar label="Exposed" value={totalExposures} max={Math.max(1, rescuedCount + totalExposures)} tone="#f0555a" />
+          </Panel>
+        </div>
+
+        {/* CENTER GRAPH */}
+        <div className="border border-[#1a1d26] rounded-lg bg-[#0a0c11] relative overflow-hidden min-h-[360px] lg:min-h-[440px]">
+          <div className="absolute top-2 left-3 z-10">
+            <p className="text-[#f0f0f5] font-bold tracking-wide">REGISTRY GRAPH · LIVE</p>
+            <p className="text-[#6b7080] text-[10px]">every registered repo is a node · funds flow into the shielded vault</p>
+          </div>
+          <div className="absolute top-2 right-3 z-10 flex items-center gap-1.5 text-[10px] text-[#2fbf85]">
+            <span className="w-1.5 h-1.5 rounded-full bg-[#2fbf85] animate-pulse" /> SCANNING
+          </div>
+          <div className="absolute inset-0">
+            <GraphCanvas entries={entries} rescueTick={rescueTick} />
+          </div>
+          <p className="absolute bottom-2 left-3 z-10 text-[#4a4f5c] text-[10px]">
+            transfers are private — amounts and destinations are masked (shielded note-to-note)
+          </p>
+        </div>
+
+        {/* RIGHT FEED */}
+        <Panel title="ACTIVITY FEED">
+          <div className="space-y-1.5 max-h-[440px] overflow-hidden">
+            {feed.length === 0 && <p className="text-[#4a4f5c]">waiting for first epoch…</p>}
+            {feed.map((e) => (
+              <div key={e.n} className="text-[11px] leading-snug">
+                <span className="text-[#4a4f5c]">#{e.n}</span>{" "}
+                {e.rescued > 0 ? (
+                  <span className="text-[#2fbf85]">
+                    RESCUE ····.·· STRK → vault{" "}
+                    <span className="text-[#6b7080]">({e.rescued})</span>
+                  </span>
+                ) : e.exposures > 0 ? (
+                  <span className="text-[#f0555a]">EXPOSURE ×{e.exposures} flagged</span>
+                ) : (
+                  <span className="text-[#6b7080]">scanned {e.scanned} · clean</span>
+                )}
+                <span className="text-[#3a3e48] ml-1">{ago(e.ts)}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
+
+      {/* EPOCH WALL */}
+      <div className="mt-3 border border-[#1a1d26] rounded-lg bg-[#0a0c11] px-4 py-3">
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[#f0f0f5] font-bold tracking-wide">EPOCH WALL · EVERY SCAN SINCE LAUNCH</p>
+          <span className="text-[10px] text-[#6b7080]">
+            <span className="text-[#2fbf85]">■</span> clean{" "}
+            <span className="text-[#f5a623]">■</span> exposure{" "}
+            <span className="text-[#e56b43]">■</span> rescue
+          </span>
+        </div>
+        <div className="flex flex-wrap gap-[3px]">
+          {epochs.length === 0 && <p className="text-[#4a4f5c] text-[11px]">no epochs recorded yet — the scanner writes one per run</p>}
+          {epochs.map((e) => {
+            const color = e.rescued > 0 ? "#e56b43" : e.exposures > 0 ? "#f5a623" : "#1c8f5f";
+            return (
+              <div
+                key={e.n}
+                title={`Epoch #${e.n} · scanned ${e.scanned} · ${e.rescued} rescued · ${e.exposures} exposed`}
+                className="w-[11px] h-[11px] rounded-[2px]"
+                style={{ backgroundColor: color, opacity: e.rescued > 0 || e.exposures > 0 ? 1 : 0.4 }}
+              />
+            );
+          })}
+        </div>
+      </div>
+
+      <p className="mt-3 text-[#3a3e48] text-[10px] text-center">
+        AEGIS · read-only console · a leaked key is a race — the agent just has to be faster
+      </p>
+    </div>
+  );
+}
+
+function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone: string }) {
+  return (
+    <div className="text-right">
+      <p className="text-[10px] uppercase tracking-widest text-[#6b7080]">{label}</p>
+      <p className="font-bold tabular-nums text-sm" style={{ color: tone }}>
+        {value} {sub && <span className="text-[10px] text-[#6b7080]">{sub}</span>}
+      </p>
+    </div>
+  );
+}
+
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="border border-[#1a1d26] rounded-lg bg-[#0a0c11] px-4 py-3">
+      <p className="text-[#f0f0f5] font-bold tracking-wide mb-2.5">{title}</p>
+      {children}
+    </div>
+  );
+}
+
+function NetRow({ label, info, tone }: { label: string; info: NetInfo | null; tone: string }) {
+  return (
+    <div>
+      <p className="text-[10px] tracking-widest" style={{ color: tone }}>
+        {label}
+      </p>
+      <p className="text-[#c9ccd6] tabular-nums mt-0.5">
+        {info ? fmt(info.balance ?? 0) : "—"} <span className="text-[10px] text-[#6b7080]">STRK bal</span>
+      </p>
+      <p className="text-[#6b7080] text-[10px] mt-0.5">
+        rescued {info ? fmt(info.rescuedTotal) : "—"} · {info?.rescuedCount ?? 0} acct
+      </p>
+    </div>
+  );
+}
+
+function BigNum({ value, label, tone }: { value: number; label: string; tone: string }) {
+  return (
+    <div className="mb-2.5">
+      <p className="font-bold tabular-nums leading-none" style={{ color: tone, fontSize: 30 }}>
+        {value}
+      </p>
+      <p className="text-[#6b7080] text-[10px] uppercase tracking-widest mt-1">{label}</p>
+    </div>
+  );
+}
+
+function Bar({ label, value, max, tone }: { label: string; value: number; max: number; tone: string }) {
+  const pct = Math.min(100, (value / max) * 100);
+  return (
+    <div className="mb-1.5">
+      <div className="flex justify-between text-[10px] mb-0.5">
+        <span className="text-[#6b7080]">{label}</span>
+        <span className="text-[#c9ccd6] tabular-nums">{value}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-[#12151c] overflow-hidden">
+        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: tone }} />
+      </div>
+    </div>
+  );
+}
