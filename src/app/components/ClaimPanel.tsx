@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
-import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Check, Wallet2 } from "lucide-react";
+import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Check, Wallet2, ShieldCheck } from "lucide-react";
 import * as constants from "@/utils/constants";
 import { useStoreWallet } from "./Wallet/walletContext";
 import { useFrontendProvider } from "./client/provider/providerContext";
 import SelectWallet from "./client/WalletHandle/SelectWallet";
-import PayClaimsBatch from "./client/WalletHandle/PayClaimsBatch";
+import PayClaimsBatch, { computePayouts, type BatchClaim } from "./client/WalletHandle/PayClaimsBatch";
 
 const DEFAULT_TIP_PERCENT = 2;
+// GitHub login that, combined with the safe wallet, unlocks the admin payout
+// panel. Public username, safe to expose client-side.
+const ADMIN_LOGIN = (process.env.NEXT_PUBLIC_ADMIN_GITHUB_LOGIN ?? "justbiar").toLowerCase();
 
 // Starknet addresses can differ in string form (leading zeros) while being
 // the same value, so compare as BigInt rather than string equality.
@@ -46,22 +49,21 @@ interface Claim {
   status: "pending" | "paid";
   starknetAddress: string;
   tipPercent: number;
+  githubLogin?: string;
   paidTxHash?: string;
   paidPrivately?: boolean;
 }
 
 function TipSlider({ value, onChange, amount }: { value: number; onChange: (v: number) => void; amount: number }) {
-  const netPercent = 100 - value;
-  const netAmount = amount * (netPercent / 100);
+  const tipAmount = amount * (value / 100);
+  const afterTip = amount - tipAmount;
   return (
     <div>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 mb-2">
         <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
-          Held for fees + Aegis · <span className="font-semibold text-black dark:text-white">{value}%</span>
+          Support the developer · <span className="font-semibold text-black dark:text-white">{value}%</span> ({tipAmount.toFixed(4)} STRK)
         </p>
-        <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-          You receive {netAmount.toFixed(4)} STRK
-        </p>
+        <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">After tip: {afterTip.toFixed(4)} STRK</p>
       </div>
       <input
         type="range"
@@ -71,22 +73,70 @@ function TipSlider({ value, onChange, amount }: { value: number; onChange: (v: n
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full"
-        aria-label="Percentage held back for fees and Aegis, rest paid to you"
-        aria-valuetext={`${value}% held back, you receive ${netPercent.toFixed(1)}%`}
+        aria-label="Percentage of your rescue you want to tip the developer"
+        aria-valuetext={`${value}% tip, ${afterTip.toFixed(4)} STRK before the network fee`}
       />
+      <p className="text-[11px] text-ls-gray-400 mt-1.5">
+        A shared ~6 STRK network fee is also deducted from your payout when it&apos;s sent.
+      </p>
+    </div>
+  );
+}
+
+// Network segmented toggle, shared by both modes.
+function NetworkToggle({
+  selected,
+  onSelect,
+  count,
+}: {
+  selected: NetworkKey;
+  onSelect: (n: NetworkKey) => void;
+  count: (n: NetworkKey) => number;
+}) {
+  return (
+    <div className="inline-flex items-center gap-1 p-1 mb-6 rounded-xl bg-ls-gray-100 dark:bg-ls-gray-900 border border-ls-gray-200 dark:border-ls-gray-800">
+      {(["mainnet", "sepolia"] as NetworkKey[]).map((n) => {
+        const active = selected === n;
+        const c = count(n);
+        return (
+          <button
+            key={n}
+            onClick={() => onSelect(n)}
+            className={`px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-colors flex items-center gap-2 ${
+              active
+                ? "bg-white dark:bg-ls-gray-700 text-black dark:text-white shadow-sm"
+                : "text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white"
+            }`}
+          >
+            {n}
+            {c > 0 && (
+              <span
+                className={`text-[11px] font-bold px-1.5 rounded-full ${
+                  active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-ls-gray-200 dark:bg-ls-gray-800"
+                }`}
+              >
+                {c}
+              </span>
+            )}
+          </button>
+        );
+      })}
     </div>
   );
 }
 
 export function ClaimPanel() {
   const { data: session, status } = useSession();
+  const login = (session?.user as any)?.login as string | undefined;
   const isWalletConnected = useStoreWallet((s) => s.isConnected);
   const walletAddress = useStoreWallet((s) => s.address);
   const myFrontendProviderIndex = useFrontendProvider((s) => s.currentFrontendProviderIndex);
   const setFrontendProviderIndex = useFrontendProvider((s) => s.setCurrentFrontendProviderIndex);
   const walletNetworkName = constants.Strk20Networks[myFrontendProviderIndex];
+
   const [claimable, setClaimable] = useState<Claimable[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
+  const [adminPending, setAdminPending] = useState<Claim[]>([]);
   const [tips, setTips] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<Record<string, string>>({});
@@ -102,21 +152,18 @@ export function ClaimPanel() {
       .catch(() => {});
   }, []);
 
-  // The network the panel is currently showing — derived from the same
-  // provider index the wallet/pay flow uses, so "Mainnet" here and the
-  // network a payout goes out on are always the same thing.
   const selectedNetwork: NetworkKey = myFrontendProviderIndex === NETWORK_INDEX.mainnet ? "mainnet" : "sepolia";
 
-  // A connected wallet plays one of two roles: the claimant's receiving wallet,
-  // or the safe wallet paying claims out. Only the former should drive the
-  // "receiving address" — the safe-wallet operator connects to pay, not to
-  // redirect where funds land.
   const walletNetworkKey = walletNetworkName?.toLowerCase() as NetworkKey | undefined;
   const isSafeWallet =
     isWalletConnected && !!walletNetworkKey && sameAddress(walletAddress, safeAddresses[walletNetworkKey]);
   const receivingFromWallet = isWalletConnected && !!walletAddress && !isSafeWallet;
+  // Admin = the safe wallet operator, signed in as the project's GitHub. Any
+  // other wallet (a receiving wallet, the leaked wallet, anything) is a normal
+  // claimant, even under the same GitHub login.
+  const isAdmin = isSafeWallet && !!login && login.toLowerCase() === ADMIN_LOGIN;
 
-  const load = () => {
+  const loadMine = () => {
     fetch("/api/claims?scope=mine")
       .then((r) => r.json())
       .then((d) => {
@@ -126,13 +173,24 @@ export function ClaimPanel() {
       .catch(() => {});
   };
 
+  const loadPending = () => {
+    fetch("/api/claims?scope=pending")
+      .then((r) => r.json())
+      .then((d) => setAdminPending(d.claims ?? []))
+      .catch(() => {});
+  };
+
   useEffect(() => {
-    if (status === "authenticated") load();
+    if (status === "authenticated") loadMine();
   }, [status]);
 
+  useEffect(() => {
+    if (isAdmin) loadPending();
+  }, [isAdmin]);
+
   // Submit / update a claim — the receiving address is always the connected
-  // wallet (that's the DEX-style "connect to receive" model), so there's no
-  // hand-typed address to validate, just a wallet to require.
+  // wallet (DEX-style "connect to receive"), so there's no hand-typed address
+  // to validate, just a wallet to require.
   const submit = async (repoUrl: string, network: NetworkKey, tipPercent: number) => {
     const key = `${repoUrl}::${network}`;
     if (!receivingFromWallet) {
@@ -149,7 +207,7 @@ export function ClaimPanel() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit claim");
-      load();
+      loadMine();
     } catch (e: any) {
       setError((err) => ({ ...err, [key]: e.message ?? "Failed to submit claim" }));
     } finally {
@@ -157,10 +215,6 @@ export function ClaimPanel() {
     }
   };
 
-  // Wallet-driven receiving-address row. When a (non-safe) wallet is connected
-  // it shows that wallet's address with a DEX-style "Change" that reopens the
-  // wallet picker; otherwise it prompts to connect. `savedAddr` is the
-  // already-submitted destination for a pending claim.
   const renderAddressField = (savedAddr?: string) => {
     if (receivingFromWallet) {
       return (
@@ -190,11 +244,124 @@ export function ClaimPanel() {
     );
   };
 
+  // ── Shared header ──────────────────────────────────────────────────────
+  const header = (
+    <>
+      <p className="eyebrow">{isAdmin ? "Admin · payout queue" : "Claim"}</p>
+      <h2 className="font-display text-2xl lg:text-3xl font-semibold text-black dark:text-white tracking-tight mb-3">
+        {isAdmin ? "Pending payout requests" : "Was one of your repos rescued?"}
+      </h2>
+      <p className="text-ls-gray-500 dark:text-ls-gray-400 mb-8">
+        {isAdmin ? (
+          <>
+            Connected as the Aegis safe wallet (<span className="font-mono">{shortAddr(walletAddress)}</span>). Every
+            request below was submitted by a verified repo owner with the destination and tip they chose — pay them out
+            privately in one batch.
+          </>
+        ) : (
+          <>
+            Sign in with the GitHub account that owns the repo, connect the wallet that should receive the funds, then
+            request your payout — the Aegis safe wallet sends it privately.
+          </>
+        )}
+      </p>
+    </>
+  );
+
+  // ── ADMIN PANEL ────────────────────────────────────────────────────────
+  if (status === "authenticated" && isAdmin) {
+    const adminForNet = adminPending.filter((c) => c.network === selectedNetwork);
+    const batchClaims: BatchClaim[] = adminForNet.map((c) => ({
+      repoUrl: c.repoUrl,
+      network: c.network,
+      amount: c.amount,
+      tipPercent: c.tipPercent,
+      starknetAddress: c.starknetAddress,
+      githubLogin: c.githubLogin,
+    }));
+    const payouts = computePayouts(batchClaims);
+    const adminCount = (n: NetworkKey) => adminPending.filter((c) => c.network === n).length;
+
+    return (
+      <section id="claim" className="py-16 border-y border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50 dark:bg-ls-gray-950">
+        <div className="section-container max-w-2xl">
+          {header}
+          <NetworkToggle selected={selectedNetwork} onSelect={(n) => setFrontendProviderIndex(NETWORK_INDEX[n])} count={adminCount} />
+
+          {adminForNet.length === 0 ? (
+            <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
+              No pending requests on <span className="font-semibold capitalize">{selectedNetwork}</span>.
+            </p>
+          ) : (
+            <>
+              <div className="ls-card mb-4 border-emerald-200 dark:border-emerald-800/60">
+                <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-1">
+                  Batch payout · <span className="capitalize">{selectedNetwork}</span>
+                </p>
+                <p className="text-sm text-ls-gray-600 dark:text-ls-gray-300 mb-3">
+                  {adminForNet.length} pending {adminForNet.length === 1 ? "request" : "requests"} — one private transaction,
+                  one pool fee shared across them.
+                </p>
+                <PayClaimsBatch claims={batchClaims} network={selectedNetwork} onPaid={loadPending} />
+              </div>
+
+              {payouts.map((r) => {
+                const c = r.claim;
+                return (
+                  <div key={`${c.repoUrl}::${c.network}`} className="ls-card mb-3">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <span className="tag-pending inline-flex items-center gap-1.5 mb-2">
+                          <Clock3 size={11} /> Pending
+                        </span>
+                        <p className="font-semibold text-black dark:text-white truncate">
+                          {c.repoUrl.replace("https://github.com/", "")}
+                        </p>
+                        {c.githubLogin && <p className="text-xs text-ls-gray-400">@{c.githubLogin}</p>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="hero-stat text-2xl text-black dark:text-white leading-none tracking-tight">
+                          {r.payable ? r.net.toFixed(4) : "—"}
+                        </p>
+                        <p className="text-[11px] font-semibold text-ls-gray-400 mt-0.5">STRK net</p>
+                      </div>
+                    </div>
+                    <div className="mt-3 pt-3 border-t border-ls-gray-100 dark:border-ls-gray-800 grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2 text-xs">
+                      <div>
+                        <p className="text-ls-gray-400">Rescued</p>
+                        <p className="font-semibold text-black dark:text-white tabular-nums">{c.amount.toFixed(4)}</p>
+                      </div>
+                      <div>
+                        <p className="text-ls-gray-400">Tip {c.tipPercent}%</p>
+                        <p className="font-semibold text-black dark:text-white tabular-nums">−{r.tipAmount.toFixed(4)}</p>
+                      </div>
+                      <div>
+                        <p className="text-ls-gray-400">Fee share</p>
+                        <p className="font-semibold text-black dark:text-white tabular-nums">−{r.feeShare.toFixed(4)}</p>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-ls-gray-400">To</p>
+                        <p className="font-mono text-black dark:text-white truncate">{shortAddr(c.starknetAddress)}</p>
+                      </div>
+                    </div>
+                    {!r.payable && (
+                      <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
+                        Too small to cover its fee share right now — left pending.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </>
+          )}
+        </div>
+      </section>
+    );
+  }
+
+  // ── CLAIMANT (normal user) PANEL ───────────────────────────────────────
   const visibleClaimable = claimable.filter((c) => c.network === selectedNetwork);
   const visibleClaims = claims.filter((c) => c.network === selectedNetwork);
-  // Pending claims the safe wallet can pay right now, batched into one tx.
-  const payablePending = visibleClaims.filter((c) => c.status === "pending");
-  const batchNetTotal = payablePending.reduce((s, c) => s + c.amount * (1 - c.tipPercent / 100), 0);
   const hasAny = claimable.length > 0 || claims.length > 0;
   const netCount = (n: NetworkKey) =>
     claimable.filter((c) => c.network === n).length + claims.filter((c) => c.network === n).length;
@@ -202,15 +369,7 @@ export function ClaimPanel() {
   return (
     <section id="claim" className="py-16 border-y border-ls-gray-200 dark:border-ls-gray-800 bg-ls-gray-50 dark:bg-ls-gray-950">
       <div className="section-container max-w-2xl">
-        <p className="eyebrow">Claim</p>
-        <h2 className="font-display text-2xl lg:text-3xl font-semibold text-black dark:text-white tracking-tight mb-3">
-          Was one of your repos rescued?
-        </h2>
-        <p className="text-ls-gray-500 dark:text-ls-gray-400 mb-8">
-          Sign in with the GitHub account that owns the repo — we match your
-          login against the repo's owner and the rescue ledger, no manual proof
-          needed.
-        </p>
+        {header}
 
         {status !== "authenticated" ? (
           <button
@@ -226,36 +385,7 @@ export function ClaimPanel() {
           </p>
         ) : (
           <>
-            {/* Network switch — one network at a time keeps mainnet and testnet
-                claims from stacking up together. */}
-            <div className="inline-flex items-center gap-1 p-1 mb-6 rounded-xl bg-ls-gray-100 dark:bg-ls-gray-900 border border-ls-gray-200 dark:border-ls-gray-800">
-              {(["mainnet", "sepolia"] as NetworkKey[]).map((n) => {
-                const active = selectedNetwork === n;
-                const count = netCount(n);
-                return (
-                  <button
-                    key={n}
-                    onClick={() => setFrontendProviderIndex(NETWORK_INDEX[n])}
-                    className={`px-4 py-1.5 rounded-lg text-sm font-semibold capitalize transition-colors flex items-center gap-2 ${
-                      active
-                        ? "bg-white dark:bg-ls-gray-700 text-black dark:text-white shadow-sm"
-                        : "text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white"
-                    }`}
-                  >
-                    {n}
-                    {count > 0 && (
-                      <span
-                        className={`text-[11px] font-bold px-1.5 rounded-full ${
-                          active ? "bg-black text-white dark:bg-white dark:text-black" : "bg-ls-gray-200 dark:bg-ls-gray-800"
-                        }`}
-                      >
-                        {count}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
+            <NetworkToggle selected={selectedNetwork} onSelect={(n) => setFrontendProviderIndex(NETWORK_INDEX[n])} count={netCount} />
 
             {visibleClaimable.length === 0 && visibleClaims.length === 0 ? (
               <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
@@ -294,7 +424,7 @@ export function ClaimPanel() {
                             disabled={submitting === key}
                             className="btn-primary text-sm px-5 py-2 disabled:opacity-50"
                           >
-                            {submitting === key ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Claim to this wallet</>}
+                            {submitting === key ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Request payout</>}
                           </button>
                         )}
                       </div>
@@ -303,45 +433,10 @@ export function ClaimPanel() {
                   );
                 })}
 
-                {/* Slim safe-wallet hint, only when there's a pending payout and
-                    the safe wallet isn't the one connected. Reworded so it never
-                    contradicts an already-connected (claimant) wallet: it either
-                    prompts to connect the safe wallet, or offers to switch to it. */}
-                {visibleClaims.some((c) => c.status === "pending") && !isSafeWallet && (
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 px-4 py-3 rounded-2xl border border-dashed border-ls-gray-300 dark:border-ls-gray-700">
-                    <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
-                      {isWalletConnected ? (
-                        <>Only the <span className="font-semibold text-black dark:text-white">Aegis safe wallet</span> can pay these out — switch to it if you're paying.</>
-                      ) : (
-                        <>Paying out is done by the <span className="font-semibold text-black dark:text-white">Aegis safe wallet</span>. Connect it only if you're the one paying.</>
-                      )}
-                    </p>
-                    {isWalletConnected ? <SelectWallet variant="change" /> : <SelectWallet variant="nav" />}
-                  </div>
-                )}
-
-                {/* Batch payout — one private apply_actions call for every
-                    pending claim on this network, so the flat pool fee is paid
-                    once instead of once per claim. Only the safe wallet sees it. */}
-                {isSafeWallet && payablePending.length > 0 && (
-                  <div className="ls-card mb-4 border-emerald-200 dark:border-emerald-800/60">
-                    <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-1">
-                      Pay out · <span className="capitalize">{selectedNetwork}</span>
-                    </p>
-                    <p className="text-sm text-ls-gray-600 dark:text-ls-gray-300 mb-3">
-                      {payablePending.length} pending {payablePending.length === 1 ? "claim" : "claims"} ·
-                      you send <span className="font-semibold text-black dark:text-white">{batchNetTotal.toFixed(4)} STRK</span>
-                    </p>
-                    <PayClaimsBatch claims={payablePending} network={selectedNetwork} onPaid={load} />
-                  </div>
-                )}
-
                 {/* Submitted claims (pending / paid) */}
                 {visibleClaims.map((c) => {
                   const key = `${c.repoUrl}::${c.network}`;
                   const tip = tips[key] ?? c.tipPercent;
-                  // A change to save exists when the claimant connected a
-                  // different receiving wallet, or moved the tip slider.
                   const addrChanged = receivingFromWallet && !sameAddress(walletAddress, c.starknetAddress);
                   const tipChanged = tip !== c.tipPercent;
                   const hasUnsavedEdits = c.status === "pending" && (addrChanged || tipChanged);
@@ -390,21 +485,10 @@ export function ClaimPanel() {
                               >
                                 {submitting === key ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Save changes</>}
                               </button>
-                            ) : isSafeWallet ? (
-                              // The safe wallet pays every pending claim together
-                              // from the batch bar above — no per-claim button, so
-                              // it can't accidentally pay one at a time and eat a
-                              // separate pool fee for each.
-                              <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-center gap-1.5">
-                                <Clock3 size={13} className="shrink-0" /> Included in the payout above.
-                              </p>
                             ) : (
                               <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-start gap-1.5">
                                 <Clock3 size={13} className="mt-0.5 shrink-0" />
-                                <span>
-                                  Manual payout — whoever holds the Aegis safe wallet sends this
-                                  privately (no automatic transfer). Connect it above to pay it out.
-                                </span>
+                                <span>Requested — the Aegis safe wallet pays this out privately (manual, no automatic transfer).</span>
                               </p>
                             )}
                           </div>
@@ -413,6 +497,17 @@ export function ClaimPanel() {
                     </div>
                   );
                 })}
+
+                {/* Subtle operator entry point — connecting the safe wallet
+                    switches this whole panel into the admin payout queue. */}
+                {visibleClaims.some((c) => c.status === "pending") && (
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-2 px-4 py-3 rounded-2xl border border-dashed border-ls-gray-300 dark:border-ls-gray-700">
+                    <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 flex items-center gap-1.5">
+                      <ShieldCheck size={14} className="text-ls-gray-400" /> Running payouts? Connect the Aegis safe wallet for the admin queue.
+                    </p>
+                    {isWalletConnected ? <SelectWallet variant="change" /> : <SelectWallet variant="nav" />}
+                  </div>
+                )}
               </>
             )}
           </>

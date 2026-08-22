@@ -10,16 +10,32 @@ import { useFrontendProvider } from "../provider/providerContext";
 const TOKEN = constants.addrSTRK;
 
 // Flat pool fee per apply_actions call (see strk20-hackathon issue #156). It's
-// charged once per call regardless of how many transfers are inside, which is
-// the whole reason batching pays off.
-const POOL_FEE_STRK = 6;
+// charged once per call regardless of how many transfers are inside — so it's
+// split across the batch and deducted from each recipient's payout, rather
+// than the safe wallet eating it.
+export const POOL_FEE_STRK = 6;
 
-interface BatchClaim {
+export interface BatchClaim {
   repoUrl: string;
   network: "mainnet" | "sepolia";
   amount: number;
   tipPercent: number;
   starknetAddress: string;
+  githubLogin?: string;
+}
+
+// Per-claim payout math, shared with the panel so the numbers it shows match
+// exactly what gets sent. The flat pool fee is split proportionally to each
+// claim's amount, then that share plus the claimant's tip is deducted. A claim
+// whose net comes out <= 0 (its slice can't cover the fee) is left unpaid.
+export function computePayouts(claims: BatchClaim[], poolFee = POOL_FEE_STRK) {
+  const sumAmount = claims.reduce((s, c) => s + c.amount, 0);
+  return claims.map((c) => {
+    const feeShare = sumAmount > 0 ? poolFee * (c.amount / sumAmount) : poolFee;
+    const tipAmount = c.amount * (c.tipPercent / 100);
+    const net = c.amount - tipAmount - feeShare;
+    return { claim: c, feeShare, tipAmount, net, payable: net > 0 };
+  });
 }
 
 interface Props {
@@ -35,10 +51,9 @@ type Status =
   | { kind: "ok"; txHash: string }
   | { kind: "error"; message: string };
 
-// Pays every pending claim on one network in a SINGLE private apply_actions
-// call, so the flat pool fee is paid once instead of once per claim. Same
-// wallet store / confirmation flow as PayClaimInline, just with an actions
-// array of N transfers instead of one.
+// Pays every payable pending claim on one network in a SINGLE private
+// apply_actions call, so the flat pool fee is paid once and split across the
+// recipients instead of once per claim.
 export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
   const myWalletAccount = useStoreWallet((s) => s.myWalletAccount);
   const connectedAddress = useStoreWallet((s) => s.address);
@@ -48,19 +63,21 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
 
-  const netTotal = claims.reduce((s, c) => s + c.amount * (1 - c.tipPercent / 100), 0);
+  const rows = computePayouts(claims);
+  const payable = rows.filter((r) => r.payable);
+  const skipped = rows.length - payable.length;
+  const netTotal = payable.reduce((s, r) => s + r.net, 0);
   const networkMatches = isConnected && networkName?.toLowerCase() === network;
   const busy = status.kind === "sending" || status.kind === "confirming";
   const explorerTxUrl = (h: string) =>
     network === "mainnet" ? `https://voyager.online/tx/${h}` : `https://sepolia.voyager.online/tx/${h}`;
 
   const handlePayAll = async () => {
-    if (!myWalletAccount || !connectedAddress || claims.length === 0) return;
+    if (!myWalletAccount || !connectedAddress || payable.length === 0) return;
     setStatus({ kind: "sending" });
-    const actions: WALLET_API.STRK20_ACTION[] = claims.map((c) => {
-      const netAmount = c.amount * (1 - c.tipPercent / 100);
-      const amountWei = BigInt(Math.round(netAmount * 1e18));
-      return { type: "transfer", token: TOKEN, amount: num.toHex(amountWei), recipient: c.starknetAddress };
+    const actions: WALLET_API.STRK20_ACTION[] = payable.map((r) => {
+      const amountWei = BigInt(Math.round(r.net * 1e18));
+      return { type: "transfer", token: TOKEN, amount: num.toHex(amountWei), recipient: r.claim.starknetAddress };
     });
 
     let txH: string;
@@ -93,13 +110,18 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
     }
 
     setStatus({ kind: "ok", txHash: txH });
-    // One tx settles every claim — mark them all paid against the same hash.
+    // One tx settles every payable claim — mark them all paid against the hash.
     await Promise.allSettled(
-      claims.map((c) =>
+      payable.map((r) =>
         fetch("/api/claims/pay", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ repoUrl: c.repoUrl, network: c.network, txHash: txH, payerAddress: connectedAddress }),
+          body: JSON.stringify({
+            repoUrl: r.claim.repoUrl,
+            network: r.claim.network,
+            txHash: txH,
+            payerAddress: connectedAddress,
+          }),
         })
       )
     );
@@ -109,7 +131,7 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
   if (status.kind === "ok") {
     return (
       <a href={explorerTxUrl(status.txHash)} target="_blank" rel="noreferrer" className="tag-clean inline-flex items-center gap-1">
-        Paid {claims.length} privately ↗
+        Paid {payable.length} privately ↗
       </a>
     );
   }
@@ -120,6 +142,10 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
         <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400">
           Connected wallet is on {networkName ?? "an unsupported network"} — switch it to {network} to pay these.
         </p>
+      ) : payable.length === 0 ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          The pending total on {network} doesn&apos;t cover the ~{POOL_FEE_STRK} STRK pool fee yet — wait for more rescues before paying.
+        </p>
       ) : (
         <>
           <button onClick={handlePayAll} disabled={busy} className="btn-primary text-sm px-5 py-2.5 disabled:opacity-50">
@@ -127,11 +153,11 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
               ? "Confirm in your wallet…"
               : status.kind === "confirming"
               ? "Waiting for confirmation…"
-              : `Pay ${claims.length} ${claims.length === 1 ? "claim" : "claims"} privately · ${netTotal.toFixed(4)} STRK`}
+              : `Pay ${payable.length} ${payable.length === 1 ? "claim" : "claims"} privately · ${netTotal.toFixed(4)} STRK`}
           </button>
           <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 mt-2">
-            One transaction, one ~{POOL_FEE_STRK} STRK pool fee
-            {claims.length > 1 ? ` — instead of ${claims.length} separate ${POOL_FEE_STRK} STRK fees.` : "."}
+            One transaction · a single ~{POOL_FEE_STRK} STRK pool fee split across recipients (deducted from each payout).
+            {skipped > 0 && ` ${skipped} claim(s) too small to cover their fee share — left pending.`}
           </p>
         </>
       )}
