@@ -58,13 +58,23 @@ export async function GET(req: NextRequest) {
     rescuedByRepoNetwork.set(key, (rescuedByRepoNetwork.get(key) ?? 0) + r.amount);
   }
 
+  // How much of each repo/network's rescued total is already spoken for by a
+  // claim (pending or paid). Claimable is what's LEFT — so if a repo leaks and
+  // is rescued again after an earlier claim was already paid, the new amount
+  // shows up as newly claimable instead of vanishing.
+  const claimedByRepoNetwork = new Map<string, number>();
+  for (const c of myClaims) {
+    const key = `${c.repoUrl}::${c.network}`;
+    claimedByRepoNetwork.set(key, (claimedByRepoNetwork.get(key) ?? 0) + c.amount);
+  }
+
   const claimable = Array.from(rescuedByRepoNetwork.entries())
     .map(([key, total]) => {
       const [repoUrl, network] = key.split("::") as [string, Network];
-      const alreadyClaimed = myClaims.some((c) => c.repoUrl === repoUrl && c.network === network);
-      return { repoUrl, network, amount: total, alreadyClaimed };
+      const remaining = total - (claimedByRepoNetwork.get(key) ?? 0);
+      return { repoUrl, network, amount: remaining };
     })
-    .filter((c) => !c.alreadyClaimed);
+    .filter((c) => c.amount > 1e-4);
 
   return NextResponse.json({ claimable, claims: myClaims });
 }
@@ -97,34 +107,47 @@ export async function POST(req: NextRequest) {
   }
 
   const ledger = await getLedger();
-  const amount = ledger
+  const ledgerTotal = ledger
     .filter((r) => r.repoUrl === repoUrl && r.network === network)
     .reduce((sum, r) => sum + r.amount, 0);
-  if (amount <= 0) {
+  if (ledgerTotal <= 0) {
     return NextResponse.json({ error: "No rescue on record for this repo/network" }, { status: 404 });
   }
 
   const claims = await getClaims();
-  const existing = claims.find((c) => c.repoUrl === repoUrl && c.network === network);
-  if (existing) {
-    if (existing.status === "paid") {
-      return NextResponse.json({ error: "Already paid out" }, { status: 409 });
-    }
-    // Still pending — let them correct the address or tip (wrong wallet,
-    // changed their mind) rather than getting stuck with the first values
-    // they picked.
+
+  // If there's already a pending claim for this repo/network, this is an edit
+  // (fix the address or tip) — not a new one.
+  const pending = claims.find(
+    (c) => c.repoUrl === repoUrl && c.network === network && c.status === "pending",
+  );
+  if (pending) {
     const updated = await updatePendingClaim(repoUrl, network, login, { starknetAddress, tipPercent });
     if (!updated) {
       return NextResponse.json({ error: "Could not update the pending claim" }, { status: 500 });
     }
-    return NextResponse.json({ claim: { ...existing, starknetAddress, tipPercent } });
+    return NextResponse.json({ claim: { ...pending, starknetAddress, tipPercent } });
+  }
+
+  // No pending claim — a new one covers whatever's been rescued beyond what
+  // earlier (paid) claims already accounted for. Lets the same repo be claimed
+  // again after a fresh rescue.
+  const claimedTotal = claims
+    .filter((c) => c.repoUrl === repoUrl && c.network === network)
+    .reduce((sum, c) => sum + c.amount, 0);
+  const remaining = ledgerTotal - claimedTotal;
+  if (remaining <= 1e-4) {
+    return NextResponse.json(
+      { error: "Nothing left to claim — the rescued amount for this repo is already claimed or paid" },
+      { status: 409 },
+    );
   }
 
   const claim: ClaimRecord = {
     repoUrl,
     githubLogin: login,
     starknetAddress,
-    amount,
+    amount: remaining,
     network,
     status: "pending",
     requestedAt: Date.now(),
