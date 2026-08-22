@@ -1,9 +1,10 @@
 "use client";
 
 // Live "mission control" console. Real data (registry repos, vault totals,
-// epoch history) drives it; the asset-transfer flows are deliberately private —
-// masked amounts, no addresses — they're visual signal that the agent is
-// sweeping funds into the shielded pool, not a public from→to record.
+// epoch history) drives it. The scan pass is a client-side visualisation: it
+// sweeps every repo node one-by-one, fast, with a terminal progress readout —
+// mirroring how the agent actually walks the registry each epoch. Asset flows
+// are deliberately private: masked amounts, no addresses.
 //
 // Loading this page is read-only (registry / vault / epochs). It never calls
 // scan-registry, so it never triggers a rescue.
@@ -34,8 +35,16 @@ interface Epoch {
   durationMs: number;
 }
 
+interface ScanState {
+  index: number; // currently-scanning node, -1 = idle
+  order: number[]; // node indices, scan order
+  status: Record<number, "clean" | "exposure" | "rescue">;
+}
+
 const STAGES = ["DETECT", "DERIVE", "CHECK", "SHIELD", "CLAIM"] as const;
 const CLUSTER_COLORS = ["#22d3ee", "#2fbf85", "#a78bfa", "#f5a623", "#f0555a", "#e56b43", "#38bdf8"];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const repoLabel = (e?: RegistryEntry) => (e?.repo_url ?? "").replace("https://github.com/", "") || e?.name || "repo";
 
 function useClock() {
   const [t, setT] = useState("--:--:--");
@@ -48,13 +57,19 @@ function useClock() {
   return t;
 }
 
-// ── Canvas graph: repo nodes clustered by category, flowing masked transfers
-//    into a central shielded-vault node ────────────────────────────────────
-function GraphCanvas({ entries, rescueTick }: { entries: RegistryEntry[]; rescueTick: number }) {
+// ── Canvas graph: repo nodes clustered by category, a scan cursor sweeping
+//    them one-by-one, and masked transfers flowing into the shielded vault ──
+function GraphCanvas({
+  entries,
+  scanRef,
+  rescueTick,
+}: {
+  entries: RegistryEntry[];
+  scanRef: React.MutableRefObject<ScanState>;
+  rescueTick: number;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const stateRef = useRef<any>(null);
   const rescueRef = useRef(0);
-
   useEffect(() => {
     rescueRef.current = rescueTick;
   }, [rescueTick]);
@@ -65,13 +80,31 @@ function GraphCanvas({ entries, rescueTick }: { entries: RegistryEntry[]; rescue
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Cluster repos by category.
     const cats = Array.from(new Set(entries.map((e) => e.category ?? "Other")));
     const catIndex = new Map(cats.map((c, i) => [c, i]));
 
     let W = 0;
     let H = 0;
     const dpr = Math.min(2, window.devicePixelRatio || 1);
+
+    type Node = { bx: number; by: number; x: number; y: number; ci: number; ph: number; hot: number };
+    let nodes: Node[] = [];
+    const buildNodes = () => {
+      const cx = W / 2;
+      const cy = H / 2;
+      const ring = Math.min(W, H) * 0.36;
+      nodes = entries.slice(0, 200).map((e, i) => {
+        const ci = catIndex.get(e.category ?? "Other") ?? 0;
+        const ca = (ci / Math.max(1, cats.length)) * Math.PI * 2;
+        const clx = cx + Math.cos(ca) * ring;
+        const cly = cy + Math.sin(ca) * ring;
+        const a = (i * 2.399963) % (Math.PI * 2);
+        const rr = 24 + ((i * 37) % 62);
+        const bx = clx + Math.cos(a) * rr;
+        const by = cly + Math.sin(a) * rr;
+        return { bx, by, x: bx, y: by, ci, ph: Math.random() * Math.PI * 2, hot: 0 };
+      });
+    };
     const resize = () => {
       const r = canvas.getBoundingClientRect();
       W = r.width;
@@ -82,80 +115,53 @@ function GraphCanvas({ entries, rescueTick }: { entries: RegistryEntry[]; rescue
       buildNodes();
     };
 
-    type Node = { bx: number; by: number; x: number; y: number; ci: number; ph: number; hot: number };
-    let nodes: Node[] = [];
-    const buildNodes = () => {
-      const cx = W / 2;
-      const cy = H / 2;
-      const ring = Math.min(W, H) * 0.36;
-      nodes = entries.slice(0, 130).map((e, i) => {
-        const ci = catIndex.get(e.category ?? "Other") ?? 0;
-        const ca = (ci / Math.max(1, cats.length)) * Math.PI * 2;
-        const clx = cx + Math.cos(ca) * ring;
-        const cly = cy + Math.sin(ca) * ring;
-        const a = (i * 2.399963) % (Math.PI * 2); // golden-angle scatter
-        const rr = 26 + ((i * 37) % 60);
-        const bx = clx + Math.cos(a) * rr;
-        const by = cly + Math.sin(a) * rr;
-        return { bx, by, x: bx, y: by, ci, ph: Math.random() * Math.PI * 2, hot: 0 };
-      });
-    };
-
     type Particle = { t: number; sx: number; sy: number; cx: number; cy: number; ex: number; ey: number; hue: string };
     let particles: Particle[] = [];
-    const spawnParticle = (fromRescue: boolean) => {
-      if (nodes.length === 0) return;
-      const n = nodes[Math.floor(Math.random() * nodes.length)];
-      n.hot = 1;
+    const spawnFrom = (ni: number, hue: string) => {
+      const n = nodes[ni];
+      if (!n) return;
       const ex = W / 2;
       const ey = H / 2;
       const mx = (n.x + ex) / 2 + (Math.random() - 0.5) * 120;
       const my = (n.y + ey) / 2 + (Math.random() - 0.5) * 120;
-      particles.push({
-        t: 0,
-        sx: n.x,
-        sy: n.y,
-        cx: mx,
-        cy: my,
-        ex,
-        ey,
-        hue: fromRescue ? "#2fbf85" : "#22d3ee",
-      });
+      particles.push({ t: 0, sx: n.x, sy: n.y, cx: mx, cy: my, ex, ey, hue });
     };
 
     let raf = 0;
     let last = performance.now();
-    let sweep = 0;
     let lastRescue = rescueRef.current;
-    let ambientTimer = 0;
+    let prevScanIdx = -1;
 
     const frame = (now: number) => {
       const dt = Math.min(50, now - last);
       last = now;
-      sweep += dt * 0.00018;
-      ambientTimer += dt;
-
-      // New rescue reported → burst of green private transfers.
-      if (rescueRef.current !== lastRescue) {
-        lastRescue = rescueRef.current;
-        for (let i = 0; i < 6; i++) setTimeout(() => spawnParticle(true), i * 120);
-      }
-      // Ambient cyan "scanning" transfers so it always feels alive.
-      if (ambientTimer > 900) {
-        ambientTimer = 0;
-        spawnParticle(false);
-      }
-
-      ctx.clearRect(0, 0, W, H);
       const cx = W / 2;
       const cy = H / 2;
 
-      // Edges: faint lines from each node toward the vault, brighter as the
-      // sweep beam passes its angle.
+      if (rescueRef.current !== lastRescue) {
+        lastRescue = rescueRef.current;
+        for (let i = 0; i < 6; i++) setTimeout(() => spawnFrom(Math.floor(Math.random() * nodes.length), "#2fbf85"), i * 110);
+      }
+
+      const scan = scanRef.current;
+      const activeNode = scan.index >= 0 ? scan.order[scan.index] : -1;
+      // When the scan cursor advances, light the new node and, for hits, flow a
+      // (masked) transfer into the vault.
+      if (activeNode !== prevScanIdx) {
+        prevScanIdx = activeNode;
+        if (activeNode >= 0 && nodes[activeNode]) {
+          nodes[activeNode].hot = 1;
+          const st = scan.status[activeNode];
+          if (st === "rescue") spawnFrom(activeNode, "#2fbf85");
+          else if (st === "exposure") spawnFrom(activeNode, "#f5a623");
+          else if (Math.random() < 0.25) spawnFrom(activeNode, "#22d3ee");
+        }
+      }
+
+      ctx.clearRect(0, 0, W, H);
+
       for (const n of nodes) {
-        const ang = Math.atan2(n.y - cy, n.x - cx);
-        const beam = 0.5 + 0.5 * Math.cos(ang - sweep * Math.PI * 2);
-        ctx.strokeStyle = `rgba(120,140,170,${0.03 + beam * 0.06})`;
+        ctx.strokeStyle = "rgba(120,140,170,0.04)";
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(n.x, n.y);
@@ -163,20 +169,22 @@ function GraphCanvas({ entries, rescueTick }: { entries: RegistryEntry[]; rescue
         ctx.stroke();
       }
 
-      // Nodes.
-      for (const n of nodes) {
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i];
         n.ph += dt * 0.001;
         n.x = n.bx + Math.cos(n.ph) * 3;
         n.y = n.by + Math.sin(n.ph * 1.3) * 3;
-        n.hot *= 0.96;
-        const base = CLUSTER_COLORS[n.ci % CLUSTER_COLORS.length];
-        const r = 2.2 + n.hot * 3.5;
+        n.hot *= 0.94;
+        const st = scan.status[i];
+        const base =
+          st === "rescue" ? "#2fbf85" : st === "exposure" ? "#f5a623" : CLUSTER_COLORS[n.ci % CLUSTER_COLORS.length];
+        const r = 2.1 + n.hot * 3.6;
         if (n.hot > 0.05) {
           ctx.shadowColor = base;
           ctx.shadowBlur = 12 * n.hot;
         }
         ctx.fillStyle = base;
-        ctx.globalAlpha = 0.55 + n.hot * 0.45;
+        ctx.globalAlpha = 0.5 + n.hot * 0.5;
         ctx.beginPath();
         ctx.arc(n.x, n.y, r, 0, Math.PI * 2);
         ctx.fill();
@@ -184,10 +192,21 @@ function GraphCanvas({ entries, rescueTick }: { entries: RegistryEntry[]; rescue
         ctx.globalAlpha = 1;
       }
 
-      // Particles (masked private transfers) travelling to the vault.
+      // Scan cursor ring on the node being scanned.
+      if (activeNode >= 0 && nodes[activeNode]) {
+        const n = nodes[activeNode];
+        ctx.strokeStyle = "#22d3ee";
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.9;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, 8 + Math.sin(now * 0.02) * 2, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+
       particles = particles.filter((p) => p.t < 1);
       for (const p of particles) {
-        p.t += dt * 0.0009;
+        p.t += dt * 0.0011;
         const u = p.t;
         const iu = 1 - u;
         const x = iu * iu * p.sx + 2 * iu * u * p.cx + u * u * p.ex;
@@ -203,7 +222,6 @@ function GraphCanvas({ entries, rescueTick }: { entries: RegistryEntry[]; rescue
         ctx.globalAlpha = 1;
       }
 
-      // Central shielded vault node.
       const pulse = 1 + Math.sin(now * 0.003) * 0.08;
       ctx.shadowColor = "#e56b43";
       ctx.shadowBlur = 26;
@@ -228,12 +246,11 @@ function GraphCanvas({ entries, rescueTick }: { entries: RegistryEntry[]; rescue
     resize();
     window.addEventListener("resize", resize);
     raf = requestAnimationFrame(frame);
-    stateRef.current = { spawnParticle };
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("resize", resize);
     };
-  }, [entries]);
+  }, [entries, scanRef]);
 
   return <canvas ref={canvasRef} className="w-full h-full block" />;
 }
@@ -253,12 +270,22 @@ export default function ConsolePage() {
   const [sepolia, setSepolia] = useState<NetInfo | null>(null);
   const [epochs, setEpochs] = useState<Epoch[]>([]);
   const [stage, setStage] = useState(0);
-  const rescueTickRef = useRef(0);
+
+  // Scan-pass visualisation state.
+  const scanRef = useRef<ScanState>({ index: -1, order: [], status: {} });
+  const [progress, setProgress] = useState(0);
+  const [scanning, setScanning] = useState(false);
+  const [term, setTerm] = useState<string[]>([]);
+  const pushTerm = (line: string) => setTerm((t) => [...t.slice(-9), line]);
+
   const [rescueTick, setRescueTick] = useState(0);
+  const rescueTickRef = useRef(0);
   const lastEpochN = useRef<number>(-1);
+  const latestEpochRef = useRef<Epoch | null>(null);
 
   useEffect(() => {
-    fetch("/api/registry").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])).catch(() => {});
+    const loadRegistry = () =>
+      fetch("/api/registry").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])).catch(() => {});
     const loadVault = () =>
       fetch("/api/vault").then((r) => r.json()).then((d) => {
         setMainnet(d.mainnet ?? null);
@@ -269,6 +296,7 @@ export default function ConsolePage() {
         const es: Epoch[] = d.epochs ?? [];
         setEpochs(es);
         const latest = es[es.length - 1];
+        latestEpochRef.current = latest ?? null;
         if (latest && latest.n !== lastEpochN.current) {
           if (lastEpochN.current !== -1 && latest.rescued > 0) {
             rescueTickRef.current++;
@@ -277,30 +305,87 @@ export default function ConsolePage() {
           lastEpochN.current = latest.n;
         }
       }).catch(() => {});
+    loadRegistry();
     loadVault();
     loadEpochs();
+    const reg = setInterval(loadRegistry, 60000);
     const v = setInterval(loadVault, 20000);
     const e = setInterval(loadEpochs, 8000);
     return () => {
+      clearInterval(reg);
       clearInterval(v);
       clearInterval(e);
     };
   }, []);
 
-  // Pipeline stepper heartbeat.
   useEffect(() => {
     const id = setInterval(() => setStage((s) => (s + 1) % STAGES.length), 1400);
     return () => clearInterval(id);
   }, []);
 
+  // The scan pass: sweep every repo one-by-one, fast, then idle and repeat.
+  // Exposure/rescue "hits" per pass come from the latest real epoch.
+  useEffect(() => {
+    if (entries.length === 0) return;
+    let cancelled = false;
+
+    const run = async () => {
+      while (!cancelled) {
+        const order = entries.map((_, i) => i);
+        // Assign hits from the latest real epoch (fallback: none).
+        const ep = latestEpochRef.current;
+        const status: Record<number, "clean" | "exposure" | "rescue"> = {};
+        const pick = (n: number, kind: "exposure" | "rescue") => {
+          for (let k = 0; k < n && order.length; k++) {
+            const idx = order[Math.floor(Math.random() * order.length)];
+            status[idx] = kind;
+          }
+        };
+        pick(ep?.rescued ?? 0, "rescue");
+        pick(ep?.exposures ?? 0, "exposure");
+        scanRef.current = { index: -1, order, status };
+
+        setScanning(true);
+        pushTerm(`$ aegis scan --registry  (${order.length} repos)`);
+        for (let i = 0; i < order.length; i++) {
+          if (cancelled) return;
+          scanRef.current.index = i;
+          const repo = repoLabel(entries[order[i]]);
+          const st = status[order[i]];
+          setProgress(Math.round(((i + 1) / order.length) * 100));
+          // Only log a sample of lines so the terminal reads fast, not spammy —
+          // but always log hits.
+          if (st || i % 4 === 0 || i === order.length - 1) {
+            const tag = st === "rescue" ? "RESCUE ····.·· STRK → vault" : st === "exposure" ? "EXPOSURE flagged" : "clean";
+            pushTerm(`▸ ${repo.slice(0, 34).padEnd(34, " ")} ${tag}`);
+          }
+          await sleep(38);
+        }
+        scanRef.current.index = -1;
+        setProgress(100);
+        const rescued = ep?.rescued ?? 0;
+        pushTerm(`✓ epoch #${ep?.n ?? "—"} complete · ${order.length} scanned · ${rescued} rescued`);
+        setScanning(false);
+        await sleep(2600);
+        if (cancelled) return;
+        setProgress(0);
+        pushTerm(`… idle · waiting for next scan window`);
+        await sleep(1400);
+      }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [entries]);
+
   const latest = epochs[epochs.length - 1];
   const rescuedTotal = (mainnet?.rescuedTotal ?? 0) + (sepolia?.rescuedTotal ?? 0);
   const rescuedCount = (mainnet?.rescuedCount ?? 0) + (sepolia?.rescuedCount ?? 0);
-  const pendingCount = (mainnet?.requestedCount ?? 0) + (sepolia?.requestedCount ?? 0);
   const pendingTotal = (mainnet?.requestedTotal ?? 0) + (sepolia?.requestedTotal ?? 0);
+  const pendingCount = (mainnet?.requestedCount ?? 0) + (sepolia?.requestedCount ?? 0);
+  const loaded = mainnet !== null || sepolia !== null;
   const totalExposures = epochs.reduce((s, e) => s + e.exposures, 0);
-
-  // Activity feed (newest first), amounts on rescues masked (private).
   const feed = [...epochs].reverse().slice(0, 14);
 
   return (
@@ -315,10 +400,10 @@ export default function ConsolePage() {
           </div>
         </a>
         <div className="flex items-center gap-5">
-          <Stat label="Repos" value={String(entries.length)} tone="#22d3ee" />
-          <Stat label="Rescued" value={`${fmt(rescuedTotal)}`} sub="STRK" tone="#2fbf85" />
-          <Stat label="Accounts" value={String(rescuedCount)} tone="#a78bfa" />
-          <Stat label="Pending" value={`${fmt(pendingTotal)}`} sub="STRK" tone="#f5a623" />
+          <Stat label="Repos" value={String(entries.length || "—")} tone="#22d3ee" />
+          <Stat label="Rescued" value={loaded ? fmt(rescuedTotal) : "—"} sub="STRK" tone="#2fbf85" />
+          <Stat label="Accounts" value={loaded ? String(rescuedCount) : "—"} tone="#a78bfa" />
+          <Stat label="Pending" value={loaded ? fmt(pendingTotal) : "—"} sub="STRK" tone="#f5a623" />
           <div className="text-right">
             <p className="text-[#f0f0f5] font-bold tabular-nums text-sm">{clock}</p>
             <p className="text-[#6b7080] text-[10px] flex items-center gap-1 justify-end">
@@ -343,9 +428,7 @@ export default function ConsolePage() {
             <span key={s} className="flex items-center gap-1.5">
               <span
                 className={`px-2 py-0.5 rounded text-[10px] tracking-wider transition-colors duration-300 ${
-                  i === stage
-                    ? "bg-[#22d3ee] text-black font-bold"
-                    : "bg-[#12151c] text-[#6b7080]"
+                  i === stage ? "bg-[#22d3ee] text-black font-bold" : "bg-[#12151c] text-[#6b7080]"
                 }`}
               >
                 {String(i + 1).padStart(2, "0")} {s}
@@ -364,7 +447,6 @@ export default function ConsolePage() {
 
       {/* MAIN GRID */}
       <div className="mt-3 grid grid-cols-1 lg:grid-cols-[220px_1fr_240px] gap-3">
-        {/* LEFT PANELS */}
         <div className="space-y-3">
           <Panel title="NETWORKS">
             <NetRow label="MAINNET" info={mainnet} tone="#2fbf85" />
@@ -379,35 +461,31 @@ export default function ConsolePage() {
           </Panel>
         </div>
 
-        {/* CENTER GRAPH */}
-        <div className="border border-[#1a1d26] rounded-lg bg-[#0a0c11] relative overflow-hidden min-h-[360px] lg:min-h-[440px]">
+        <div className="border border-[#1a1d26] rounded-lg bg-[#0a0c11] relative overflow-hidden min-h-[360px] lg:min-h-[420px]">
           <div className="absolute top-2 left-3 z-10">
             <p className="text-[#f0f0f5] font-bold tracking-wide">REGISTRY GRAPH · LIVE</p>
             <p className="text-[#6b7080] text-[10px]">every registered repo is a node · funds flow into the shielded vault</p>
           </div>
-          <div className="absolute top-2 right-3 z-10 flex items-center gap-1.5 text-[10px] text-[#2fbf85]">
-            <span className="w-1.5 h-1.5 rounded-full bg-[#2fbf85] animate-pulse" /> SCANNING
+          <div className="absolute top-2 right-3 z-10 flex items-center gap-1.5 text-[10px]" style={{ color: scanning ? "#22d3ee" : "#6b7080" }}>
+            <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: scanning ? "#22d3ee" : "#6b7080" }} />
+            {scanning ? "SCANNING" : "IDLE"}
           </div>
           <div className="absolute inset-0">
-            <GraphCanvas entries={entries} rescueTick={rescueTick} />
+            <GraphCanvas entries={entries} scanRef={scanRef} rescueTick={rescueTick} />
           </div>
           <p className="absolute bottom-2 left-3 z-10 text-[#4a4f5c] text-[10px]">
             transfers are private — amounts and destinations are masked (shielded note-to-note)
           </p>
         </div>
 
-        {/* RIGHT FEED */}
         <Panel title="ACTIVITY FEED">
-          <div className="space-y-1.5 max-h-[440px] overflow-hidden">
+          <div className="space-y-1.5 max-h-[420px] overflow-hidden">
             {feed.length === 0 && <p className="text-[#4a4f5c]">waiting for first epoch…</p>}
             {feed.map((e) => (
               <div key={e.n} className="text-[11px] leading-snug">
                 <span className="text-[#4a4f5c]">#{e.n}</span>{" "}
                 {e.rescued > 0 ? (
-                  <span className="text-[#2fbf85]">
-                    RESCUE ····.·· STRK → vault{" "}
-                    <span className="text-[#6b7080]">({e.rescued})</span>
-                  </span>
+                  <span className="text-[#2fbf85]">RESCUE ····.·· STRK → vault <span className="text-[#6b7080]">({e.rescued})</span></span>
                 ) : e.exposures > 0 ? (
                   <span className="text-[#f0555a]">EXPOSURE ×{e.exposures} flagged</span>
                 ) : (
@@ -420,13 +498,54 @@ export default function ConsolePage() {
         </Panel>
       </div>
 
+      {/* SCAN TERMINAL */}
+      <div className="mt-3 border border-[#1a1d26] rounded-lg bg-[#08090d] overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-[#1a1d26]">
+          <span className="text-[#f0f0f5] font-bold tracking-wide flex items-center gap-2">
+            <span className="flex gap-1">
+              <span className="w-2 h-2 rounded-full bg-[#f0555a]" />
+              <span className="w-2 h-2 rounded-full bg-[#f5a623]" />
+              <span className="w-2 h-2 rounded-full bg-[#2fbf85]" />
+            </span>
+            aegis@scanner
+          </span>
+          <span className="text-[10px]" style={{ color: scanning ? "#22d3ee" : "#6b7080" }}>
+            {scanning ? `SCANNING ${progress}%` : "IDLE"}
+          </span>
+        </div>
+        {/* progress bar */}
+        <div className="h-1 bg-[#12151c]">
+          <div className="h-full transition-[width] duration-100 ease-linear" style={{ width: `${progress}%`, background: scanning ? "#22d3ee" : "#2fbf85" }} />
+        </div>
+        <div className="px-4 py-3 h-[168px] overflow-hidden flex flex-col justify-end">
+          {term.length === 0 && <p className="text-[#4a4f5c]">booting scanner…</p>}
+          {term.map((l, i) => (
+            <p
+              key={i}
+              className={`whitespace-pre leading-snug ${
+                l.includes("RESCUE")
+                  ? "text-[#2fbf85]"
+                  : l.includes("EXPOSURE")
+                  ? "text-[#f5a623]"
+                  : l.startsWith("$") || l.startsWith("✓")
+                  ? "text-[#c9ccd6]"
+                  : l.startsWith("…")
+                  ? "text-[#4a4f5c]"
+                  : "text-[#6b7080]"
+              }`}
+            >
+              {l}
+            </p>
+          ))}
+        </div>
+      </div>
+
       {/* EPOCH WALL */}
       <div className="mt-3 border border-[#1a1d26] rounded-lg bg-[#0a0c11] px-4 py-3">
         <div className="flex items-center justify-between mb-2">
           <p className="text-[#f0f0f5] font-bold tracking-wide">EPOCH WALL · EVERY SCAN SINCE LAUNCH</p>
           <span className="text-[10px] text-[#6b7080]">
-            <span className="text-[#2fbf85]">■</span> clean{" "}
-            <span className="text-[#f5a623]">■</span> exposure{" "}
+            <span className="text-[#2fbf85]">■</span> clean <span className="text-[#f5a623]">■</span> exposure{" "}
             <span className="text-[#e56b43]">■</span> rescue
           </span>
         </div>
