@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
-import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Pencil, Check } from "lucide-react";
+import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Check, Wallet2 } from "lucide-react";
 import * as constants from "@/utils/constants";
 import { useStoreWallet } from "./Wallet/walletContext";
 import { useFrontendProvider } from "./client/provider/providerContext";
@@ -87,9 +87,7 @@ export function ClaimPanel() {
   const walletNetworkName = constants.Strk20Networks[myFrontendProviderIndex];
   const [claimable, setClaimable] = useState<Claimable[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
-  const [addresses, setAddresses] = useState<Record<string, string>>({});
   const [tips, setTips] = useState<Record<string, number>>({});
-  const [editing, setEditing] = useState<Record<string, boolean>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<Record<string, string>>({});
   const [safeAddresses, setSafeAddresses] = useState<Record<NetworkKey, string | null>>({
@@ -109,12 +107,14 @@ export function ClaimPanel() {
   // network a payout goes out on are always the same thing.
   const selectedNetwork: NetworkKey = myFrontendProviderIndex === NETWORK_INDEX.mainnet ? "mainnet" : "sepolia";
 
-  // Paying out a claim is a safe-wallet-operator action, not something a
-  // random visitor's own wallet can do - it needs to actually be the wallet
-  // holding the rescued funds.
+  // A connected wallet plays one of two roles: the claimant's receiving wallet,
+  // or the safe wallet paying claims out. Only the former should drive the
+  // "receiving address" — the safe-wallet operator connects to pay, not to
+  // redirect where funds land.
   const walletNetworkKey = walletNetworkName?.toLowerCase() as NetworkKey | undefined;
   const isSafeWallet =
     isWalletConnected && !!walletNetworkKey && sameAddress(walletAddress, safeAddresses[walletNetworkKey]);
+  const receivingFromWallet = isWalletConnected && !!walletAddress && !isSafeWallet;
 
   const load = () => {
     fetch("/api/claims?scope=mine")
@@ -130,47 +130,13 @@ export function ClaimPanel() {
     if (status === "authenticated") load();
   }, [status]);
 
-  // Seed the address/tip inputs for pending claims with their current values,
-  // so editing shows what's there instead of resetting to defaults.
-  useEffect(() => {
-    setAddresses((a) => {
-      const next = { ...a };
-      for (const c of claims) {
-        const key = `${c.repoUrl}::${c.network}`;
-        if (c.status === "pending" && next[key] === undefined) next[key] = c.starknetAddress;
-      }
-      return next;
-    });
-    setTips((t) => {
-      const next = { ...t };
-      for (const c of claims) {
-        const key = `${c.repoUrl}::${c.network}`;
-        if (c.status === "pending" && next[key] === undefined) next[key] = c.tipPercent;
-      }
-      return next;
-    });
-  }, [claims]);
-
-  // Auto-fill the receiving address for not-yet-submitted claims with the
-  // connected wallet — no reason to hand-type an address the wallet already
-  // knows. Only fills empty fields, so a manual edit is never clobbered.
-  useEffect(() => {
-    if (!isWalletConnected || !walletAddress) return;
-    setAddresses((a) => {
-      const next = { ...a };
-      for (const c of claimable) {
-        const key = `${c.repoUrl}::${c.network}`;
-        if (next[key] === undefined || next[key] === "") next[key] = walletAddress;
-      }
-      return next;
-    });
-  }, [isWalletConnected, walletAddress, claimable]);
-
-  const submit = async (repoUrl: string, network: NetworkKey) => {
+  // Submit / update a claim — the receiving address is always the connected
+  // wallet (that's the DEX-style "connect to receive" model), so there's no
+  // hand-typed address to validate, just a wallet to require.
+  const submit = async (repoUrl: string, network: NetworkKey, tipPercent: number) => {
     const key = `${repoUrl}::${network}`;
-    const starknetAddress = addresses[key]?.trim() || (isWalletConnected ? walletAddress : "");
-    if (!starknetAddress) {
-      setError((e) => ({ ...e, [key]: "Connect a wallet or enter the Starknet address that should receive this" }));
+    if (!receivingFromWallet) {
+      setError((e) => ({ ...e, [key]: "Connect the wallet that should receive this first" }));
       return;
     }
     setSubmitting(key);
@@ -179,16 +145,10 @@ export function ClaimPanel() {
       const res = await fetch("/api/claims", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          repoUrl,
-          network,
-          starknetAddress,
-          tipPercent: tips[key] ?? DEFAULT_TIP_PERCENT,
-        }),
+        body: JSON.stringify({ repoUrl, network, starknetAddress: walletAddress, tipPercent }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Failed to submit claim");
-      setEditing((e) => ({ ...e, [key]: false }));
       load();
     } catch (e: any) {
       setError((err) => ({ ...err, [key]: e.message ?? "Failed to submit claim" }));
@@ -197,48 +157,35 @@ export function ClaimPanel() {
     }
   };
 
-  // Compact receiving-address control: shows the address as a mono pill with
-  // an Edit affordance once it's set (the common case now that it auto-fills
-  // from the wallet), and only expands into a full input when there's nothing
-  // yet or the user chooses to change it.
-  const renderAddressField = (keyId: string, network: NetworkKey) => {
-    const repoUrl = keyId.split("::")[0];
-    const value = addresses[keyId] ?? "";
-    const isMine = sameAddress(value, walletAddress);
-    const open = editing[keyId] || !value;
-    if (open) {
+  // Wallet-driven receiving-address row. When a (non-safe) wallet is connected
+  // it shows that wallet's address with a DEX-style "Change" that reopens the
+  // wallet picker; otherwise it prompts to connect. `savedAddr` is the
+  // already-submitted destination for a pending claim.
+  const renderAddressField = (savedAddr?: string) => {
+    if (receivingFromWallet) {
       return (
-        <div className="flex flex-col sm:flex-row gap-2">
-          <input
-            type="text"
-            aria-label="Starknet address to receive this"
-            placeholder="Starknet address to receive this"
-            value={value}
-            onChange={(e) => setAddresses((a) => ({ ...a, [keyId]: e.target.value }))}
-            className="flex-1 ls-input font-mono text-xs"
-          />
-          <button
-            onClick={() => submit(repoUrl, network)}
-            disabled={submitting === keyId || !value.trim()}
-            className="btn-primary text-sm px-5 py-2 whitespace-nowrap disabled:opacity-50"
-          >
-            {submitting === keyId ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Save</>}
-          </button>
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-ls-gray-50 dark:bg-ls-gray-800/60 border border-ls-gray-200 dark:border-ls-gray-700 px-4 py-2.5">
+          <div className="min-w-0">
+            <p className="font-mono text-sm text-black dark:text-white truncate">{shortAddr(walletAddress)}</p>
+            <p className="text-[11px] text-ls-gray-400">Receiving to your connected wallet</p>
+          </div>
+          <SelectWallet variant="change" />
         </div>
       );
     }
     return (
-      <div className="flex items-center justify-between gap-3 rounded-xl bg-ls-gray-50 dark:bg-ls-gray-800/60 border border-ls-gray-200 dark:border-ls-gray-700 px-4 py-2.5">
-        <div className="min-w-0">
-          <p className="font-mono text-sm text-black dark:text-white truncate">{shortAddr(value)}</p>
-          {isMine && <p className="text-[11px] text-ls-gray-400">your connected wallet</p>}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-dashed border-ls-gray-300 dark:border-ls-gray-700 px-4 py-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Wallet2 size={15} className="text-ls-gray-400 shrink-0" />
+          <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 min-w-0">
+            {savedAddr ? (
+              <>Receiving to <span className="font-mono">{shortAddr(savedAddr)}</span> — connect that wallet to change it.</>
+            ) : (
+              "Connect the wallet that should receive this."
+            )}
+          </p>
         </div>
-        <button
-          onClick={() => setEditing((e) => ({ ...e, [keyId]: true }))}
-          className="text-xs font-semibold text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1 shrink-0"
-        >
-          <Pencil size={12} /> Change
-        </button>
+        <SelectWallet variant="nav" />
       </div>
     );
   };
@@ -316,6 +263,7 @@ export function ClaimPanel() {
                 {/* Ready-to-claim (not yet submitted) */}
                 {visibleClaimable.map((c) => {
                   const key = `${c.repoUrl}::${c.network}`;
+                  const tip = tips[key] ?? DEFAULT_TIP_PERCENT;
                   return (
                     <div key={key} className="ls-card mb-4">
                       <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
@@ -335,12 +283,17 @@ export function ClaimPanel() {
                         </div>
                       </div>
                       <div className="space-y-3">
-                        {renderAddressField(key, c.network)}
-                        <TipSlider
-                          value={tips[key] ?? DEFAULT_TIP_PERCENT}
-                          onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
-                          amount={c.amount}
-                        />
+                        {renderAddressField()}
+                        <TipSlider value={tip} onChange={(v) => setTips((t) => ({ ...t, [key]: v }))} amount={c.amount} />
+                        {receivingFromWallet && (
+                          <button
+                            onClick={() => submit(c.repoUrl, c.network, tip)}
+                            disabled={submitting === key}
+                            className="btn-primary text-sm px-5 py-2 disabled:opacity-50"
+                          >
+                            {submitting === key ? <Loader2 size={14} className="animate-spin" /> : <><Check size={14} /> Claim to this wallet</>}
+                          </button>
+                        )}
                       </div>
                       {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
                     </div>
@@ -361,10 +314,12 @@ export function ClaimPanel() {
                 {/* Submitted claims (pending / paid) */}
                 {visibleClaims.map((c) => {
                   const key = `${c.repoUrl}::${c.network}`;
-                  const hasUnsavedEdits =
-                    c.status === "pending" &&
-                    ((addresses[key] !== undefined && addresses[key] !== c.starknetAddress) ||
-                      (tips[key] !== undefined && tips[key] !== c.tipPercent));
+                  const tip = tips[key] ?? c.tipPercent;
+                  // A change to save exists when the claimant connected a
+                  // different receiving wallet, or moved the tip slider.
+                  const addrChanged = receivingFromWallet && !sameAddress(walletAddress, c.starknetAddress);
+                  const tipChanged = tip !== c.tipPercent;
+                  const hasUnsavedEdits = c.status === "pending" && (addrChanged || tipChanged);
                   return (
                     <div key={key} className="ls-card mb-4">
                       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -397,18 +352,14 @@ export function ClaimPanel() {
 
                       {c.status === "pending" && (
                         <div className="mt-4 space-y-3">
-                          {renderAddressField(key, c.network)}
-                          <TipSlider
-                            value={tips[key] ?? c.tipPercent}
-                            onChange={(v) => setTips((t) => ({ ...t, [key]: v }))}
-                            amount={c.amount}
-                          />
+                          {renderAddressField(c.starknetAddress)}
+                          <TipSlider value={tip} onChange={(v) => setTips((t) => ({ ...t, [key]: v }))} amount={c.amount} />
                           {error[key] && <p className="text-sm text-red-600 dark:text-red-400">{error[key]}</p>}
 
                           <div className="pt-1">
                             {hasUnsavedEdits ? (
                               <button
-                                onClick={() => submit(c.repoUrl, c.network)}
+                                onClick={() => submit(c.repoUrl, c.network, tip)}
                                 disabled={submitting === key}
                                 className="btn-primary text-sm px-5 py-2 disabled:opacity-50"
                               >

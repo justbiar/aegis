@@ -19,7 +19,7 @@ function normalizeId(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-export default function SelectWallet({ variant = "ctaBig" }: { variant?: "nav" | "ctaBig" }) {
+export default function SelectWallet({ variant = "ctaBig" }: { variant?: "nav" | "ctaBig" | "change" }) {
 
   const setMyWallet = useStoreWallet(state => state.setMyStarknetWalletObject);
 
@@ -160,6 +160,27 @@ export default function SelectWallet({ variant = "ctaBig" }: { variant?: "nav" |
       </div>
     </div>
   ) : null;
+
+  // Change variant: an inline "Change" trigger that reopens the wallet picker
+  // so the user can switch to a different wallet (DEX-style), rather than
+  // hand-typing an address. Whichever wallet they pick becomes the address.
+  if (variant === "change") {
+    return (
+      <>
+        <button
+          onClick={openPicker}
+          className="text-xs font-semibold text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white flex items-center gap-1 shrink-0"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M12 2v6l3-3M12 22v-6l-3 3" />
+            <path d="M2 12h6l-3-3M22 12h-6l3 3" />
+          </svg>
+          Change
+        </button>
+        {picker}
+      </>
+    );
+  }
 
   // Nav variant: a compact Connect pill, or the connected address with disconnect.
   if (variant === "nav") {
