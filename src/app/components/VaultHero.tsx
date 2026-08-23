@@ -32,7 +32,10 @@ export function VaultHero() {
 
     const video = videoRef.current;
     const overlay = overlayRef.current;
-    const site = document.getElementById("main-content");
+    // The whole shell (navbar + main + footer) scales as one unit so nothing
+    // pops in independently — `transform` on this ancestor also re-contains
+    // the navbar's `fixed` positioning, so it scales/moves along with it.
+    const site = document.getElementById("site-shell");
     const S0 = 0.42; // site starts small, deep inside the vault
     if (video) {
       const pin = () => {
@@ -111,13 +114,37 @@ export function VaultHero() {
       startedRef.current = true;
       setStarted(true);
       const v = videoRef.current;
-      if (v && v.duration) {
+      if (!v) {
+        finish();
+        return;
+      }
+      const startPlayback = () => {
         v.playbackRate = 1.25;
         v.play().catch(() => {});
         raf = requestAnimationFrame(loop);
         window.setTimeout(finish, 8000); // safety net
+      };
+      if (v.duration && !Number.isNaN(v.duration)) {
+        startPlayback();
       } else {
-        finish();
+        // Metadata (and thus duration) isn't ready yet — wait briefly rather
+        // than skipping the intro outright on a slow connection.
+        let ready = false;
+        v.addEventListener(
+          "loadedmetadata",
+          () => {
+            if (ready) return;
+            ready = true;
+            startPlayback();
+          },
+          { once: true }
+        );
+        window.setTimeout(() => {
+          if (!ready) {
+            ready = true;
+            finish();
+          }
+        }, 3000);
       }
     };
 

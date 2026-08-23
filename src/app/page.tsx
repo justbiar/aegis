@@ -46,10 +46,13 @@ export default function Page() {
       <a href="#main-content" className="skip-link">
         Skip to main content
       </a>
-      <Navbar />
-      {/* ── CINEMATIC VAULT INTRO (one-shot overlay; sits outside <main> so it
-             can depth-scale the site behind the vault opening) ───────────── */}
+      {/* ── CINEMATIC VAULT INTRO (one-shot overlay). Everything below —
+             navbar, main, footer — lives in #site-shell, which VaultHero
+             depth-scales as a single unit so the whole site (not just <main>)
+             emerges together from inside the vault. ───────────────────────── */}
       <VaultHero />
+      <div id="site-shell">
+      <Navbar />
       <main id="main-content">
       {/* ── HERO (text) ─────────────────────────────────────────────────── */}
       <section className="relative pt-28 pb-16">
@@ -192,6 +195,7 @@ export default function Page() {
           </div>
         </div>
       </footer>
+      </div>
     </div>
   );
 }
