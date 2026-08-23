@@ -48,15 +48,8 @@ export default function Page() {
       </a>
       <Navbar />
       <main id="main-content" className="pt-16">
-        <VaultBanner
-          rescuedCount={rescuedCount}
-          rescuedTotal={rescuedTotal}
-          rescuedCountMainnet={rescuedCountMainnet}
-          rescuedTotalMainnet={rescuedTotalMainnet}
-        />
-
-      {/* ── LIVE CONSOLE (embedded) ─────────────────────────────────────── */}
-      <section id="live" className="py-20">
+      {/* ── LIVE CONSOLE + VAULT ────────────────────────────────────────── */}
+      <section id="live" className="pt-20 pb-20">
         <div className="section-container">
           <div className="text-center mb-10">
             <p className="eyebrow">Live</p>
@@ -68,6 +61,16 @@ export default function Page() {
               <a href="/console" className="link-arrow">Open the full console →</a>
             </p>
           </div>
+        </div>
+
+        <VaultBanner
+          rescuedCount={rescuedCount}
+          rescuedTotal={rescuedTotal}
+          rescuedCountMainnet={rescuedCountMainnet}
+          rescuedTotalMainnet={rescuedTotalMainnet}
+        />
+
+        <div className="section-container mt-12">
           <LiveConsole embedded />
         </div>
       </section>

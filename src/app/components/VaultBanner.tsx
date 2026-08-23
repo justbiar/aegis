@@ -197,7 +197,7 @@ export function VaultBanner({
   }, []);
 
   return (
-    <div className="border-b border-ls-gray-200 dark:border-ls-gray-800">
+    <div className="border-y border-ls-gray-200 dark:border-ls-gray-800">
       <div className="section-container">
         <VaultRow
           network="mainnet"
