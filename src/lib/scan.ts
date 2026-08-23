@@ -1,4 +1,4 @@
-import { hash } from "starknet";
+import { ec, hash } from "starknet";
 import { deriveCandidates, type AccountCandidate } from "./deriveAddress";
 import { rescueFunds } from "./rescue";
 import { recordRescue } from "./ledger";
@@ -70,15 +70,68 @@ function mask(secret: string): string {
   return `${secret.slice(0, 6)}…${secret.slice(-4)}`;
 }
 
+// Cryptographic gate between "looks like hex" and "is actually a key".
+//
+// The regex above matches any 32-64 hex chars, which in a Starknet repo is
+// mostly NOT keys: contract addresses, class hashes, tx hashes, selectors and
+// felt constants all have the same shape. A real Stark private key is a
+// scalar on the STARK curve, so it must be in [1, n) where n is the curve
+// order (~2^252). That alone rejects ~97% of random 256-bit values, and
+// deriving the public key rejects anything the curve maths refuses outright.
+//
+// Worth doing before the RPC layer, not after: each surviving candidate costs
+// up to 4 derived addresses x 2 tokens x 2 networks = 16 balance calls, so
+// filtering here is what keeps a scan of the whole registry cheap.
+function isStarkPrivateKey(hex: string): boolean {
+  let k: bigint;
+  try {
+    k = BigInt(hex);
+  } catch {
+    return false;
+  }
+  if (k <= 0n || k >= ec.starkCurve.CURVE.n) return false;
+  try {
+    // Throws if the scalar can't produce a public key.
+    return Boolean(ec.starkCurve.getStarkKey(hex));
+  } catch {
+    return false;
+  }
+}
+
+// The curve check can't help against Starknet's own constants: addresses,
+// class hashes and selectors are field elements below the STARK prime, and the
+// curve order is only a hair under that prime, so they pass the range test.
+// Those are the single most common hex in a Starknet .env, so the other half
+// of the filter is Gitleaks-style keyword anchoring — reject a value whose
+// own variable name says it is not a secret.
+const NOT_A_SECRET_VAR =
+  /(?:ADDRESS|ADDR|TOKEN|CONTRACT|CLASS_?HASH|SALT|SELECTOR|PUBLIC|PUBKEY|TX_?HASH|BLOCK|_ID|NONCE)\s*$/i;
+
+// Splitting the value from the name it was assigned to, for `NAME=0x..`,
+// `NAME: "0x.."`, `"NAME" => "0x.."` and friends. Anything with no name in
+// front of it (a bare literal in an array, say) has no context to judge by and
+// is kept — the curve and entropy checks still apply.
+function assignedVarName(line: string, valueIndex: number): string | null {
+  const before = line.slice(0, valueIndex);
+  const m = before.match(/([A-Za-z_][A-Za-z0-9_.-]*)\s*["']?\s*(?:[:=]|=>)\s*["']?\s*$/);
+  return m ? m[1] : null;
+}
+
 function findPrivateKeys(content: string): string[] {
   const found = new Set<string>();
   const hexPattern = /0x[0-9a-fA-F]{32,64}\b/g;
-  let m: RegExpExecArray | null;
-  while ((m = hexPattern.exec(content))) {
-    const candidate = m[0];
-    if (KNOWN_TEST_KEYS.has(candidate.toLowerCase())) continue;
-    if (shannonEntropy(candidate) < 2.5) continue;
-    found.add(candidate);
+  for (const line of content.split(/\r?\n/)) {
+    hexPattern.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = hexPattern.exec(line))) {
+      const candidate = m[0];
+      if (KNOWN_TEST_KEYS.has(candidate.toLowerCase())) continue;
+      if (shannonEntropy(candidate) < 2.5) continue;
+      const varName = assignedVarName(line, m.index);
+      if (varName && NOT_A_SECRET_VAR.test(varName)) continue;
+      if (!isStarkPrivateKey(candidate)) continue;
+      found.add(candidate);
+    }
   }
   return Array.from(found);
 }
