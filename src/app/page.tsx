@@ -153,11 +153,11 @@ export default function Page() {
               transition={{ duration: 0.6, delay: 0.15 }}
             >
               {/* Subframe "product showcase frame": a cinematic monochrome clip
-                  (leaked key → shielded vault) in a 24px hairline-bordered frame,
-                  autoplaying muted on loop. */}
+                  (camera gliding through the shielded vault) in a 24px
+                  hairline-bordered frame, autoplaying muted on loop. */}
               <div className="rounded-3xl border border-ls-gray-200 dark:border-ls-gray-800 overflow-hidden">
                 <video
-                  src="/aegis-intro.mp4"
+                  src="/vault-hero.mp4"
                   autoPlay
                   muted
                   loop
