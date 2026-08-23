@@ -47,10 +47,10 @@ export default function Page() {
         Skip to main content
       </a>
       <Navbar />
-      <main id="main-content">
-      {/* ── CINEMATIC VAULT INTRO (one-shot, full screen overlay) ───────── */}
+      {/* ── CINEMATIC VAULT INTRO (one-shot overlay; sits outside <main> so it
+             can depth-scale the site behind the vault opening) ───────────── */}
       <VaultHero />
-
+      <main id="main-content">
       {/* ── HERO (text) ─────────────────────────────────────────────────── */}
       <section className="relative pt-28 pb-16">
         <div className="ambient-glow" aria-hidden />

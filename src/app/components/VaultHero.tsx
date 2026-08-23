@@ -32,6 +32,8 @@ export function VaultHero() {
 
     const video = videoRef.current;
     const overlay = overlayRef.current;
+    const site = document.getElementById("main-content");
+    const S0 = 0.42; // site starts small, deep inside the vault
     if (video) {
       const pin = () => {
         video.currentTime = 0;
@@ -44,12 +46,30 @@ export function VaultHero() {
     let raf = 0;
     let finished = false;
 
-    const applyReveal = (r: number) => {
-      if (!overlay) return;
-      const hole = r * 155; // % of the shorter side
-      const mask = `radial-gradient(circle at 50% 46%, transparent ${hole}%, black ${hole + 10}%)`;
-      overlay.style.webkitMaskImage = mask;
-      overlay.style.maskImage = mask;
+    // reveal 0 → 1: the vault opening (mask hole) grows, and the real site
+    // behind it scales up from deep inside toward the camera → feels like flying
+    // into the vault to the site sitting at its back, not a flat cut-out.
+    const applyState = (r: number) => {
+      if (overlay) {
+        const hole = r * 155;
+        const mask = `radial-gradient(circle at 50% 46%, transparent ${hole}%, black ${hole + 10}%)`;
+        overlay.style.webkitMaskImage = mask;
+        overlay.style.maskImage = mask;
+      }
+      if (site) {
+        const s = S0 + (1 - S0) * r;
+        site.style.transformOrigin = "50% 46%";
+        site.style.transform = `scale(${s})`;
+        site.style.opacity = String(0.4 + 0.6 * r);
+      }
+    };
+
+    const resetSite = () => {
+      if (!site) return;
+      site.style.transform = "";
+      site.style.opacity = "";
+      site.style.transformOrigin = "";
+      site.style.willChange = "";
     };
 
     const finish = () => {
@@ -57,6 +77,7 @@ export function VaultHero() {
       finished = true;
       cancelAnimationFrame(raf);
       document.body.style.overflow = "";
+      resetSite();
       try {
         sessionStorage.setItem("aegis_intro_done", "1");
       } catch {
@@ -69,17 +90,21 @@ export function VaultHero() {
       const v = videoRef.current;
       if (v && v.duration) {
         const p = v.currentTime / v.duration;
-        // Aperture opens from ~35% of the clip (door cracking) to the end.
+        // The site emerges once the door begins to crack (~35% of the clip).
         const reveal = Math.min(Math.max((p - 0.35) / 0.63, 0), 1);
-        applyReveal(reveal);
+        applyState(reveal);
         if (v.ended || p >= 0.995) {
-          applyReveal(1);
+          applyState(1);
           finish();
           return;
         }
       }
       raf = requestAnimationFrame(loop);
     };
+
+    // Prime the site deep inside the (still-sealed) vault.
+    if (site) site.style.willChange = "transform, opacity";
+    applyState(0);
 
     const begin = () => {
       if (startedRef.current) return;
@@ -110,6 +135,7 @@ export function VaultHero() {
     return () => {
       cancelAnimationFrame(raf);
       document.body.style.overflow = "";
+      resetSite();
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("touchmove", onTouch);
       window.removeEventListener("click", onClick);
