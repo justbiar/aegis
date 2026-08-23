@@ -157,12 +157,12 @@ export default function Page() {
               {/* Subframe "product showcase frame": a monochrome graphite-on-vellum
                   illustration (leaked key → node mesh → shielded vault) in a 24px
                   hairline-bordered frame, no shadow. */}
-              <div className="rounded-3xl border border-ls-gray-200 overflow-hidden">
+              <div className="rounded-3xl border border-ls-gray-200 dark:border-ls-gray-800 overflow-hidden">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/hero-shield.png"
                   alt="A leaked key swept into the STRK20 shielded vault"
-                  className="w-full h-auto block"
+                  className="w-full h-auto block dark:invert"
                 />
               </div>
             </motion.div>

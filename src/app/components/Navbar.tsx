@@ -5,6 +5,7 @@ import { Shield, Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import SelectWallet from "./client/WalletHandle/SelectWallet";
 import ConnectGithub from "./client/GithubHandle/ConnectGithub";
+import { ThemeToggle } from "./ThemeToggle";
 
 const NAV_LINKS = [
   { label: "How it works", href: "#how-it-works" },
@@ -55,6 +56,7 @@ export function Navbar() {
         </nav>
 
         <div className="hidden md:flex items-center gap-3">
+          <ThemeToggle />
           <ConnectGithub />
           <SelectWallet variant="nav" />
         </div>
@@ -94,6 +96,7 @@ export function Navbar() {
                 </a>
               ))}
               <div className="pt-3 border-t border-ls-gray-200 dark:border-ls-gray-800 flex flex-col gap-2 items-start">
+                <ThemeToggle />
                 <ConnectGithub />
                 <SelectWallet variant="nav" />
               </div>
