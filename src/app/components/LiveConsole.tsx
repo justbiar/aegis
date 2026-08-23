@@ -261,6 +261,7 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
   const rescueTickRef = useRef(0);
   const lastEpochN = useRef<number>(-1);
   const latestEpochRef = useRef<Epoch | null>(null);
+  const epochScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const loadRegistry = () => fetch("/api/registry").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])).catch(() => {});
@@ -288,6 +289,12 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
     const id = setInterval(() => setStage((s) => (s + 1) % STAGES.length), 1400);
     return () => clearInterval(id);
   }, []);
+
+  // Keep the newest epoch block in view as the chain grows.
+  useEffect(() => {
+    const el = epochScrollRef.current;
+    if (el) el.scrollLeft = el.scrollWidth;
+  }, [epochs]);
 
   useEffect(() => {
     if (entries.length === 0) return;
@@ -333,7 +340,6 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
   }, [entries]);
 
   const latest = epochs[epochs.length - 1];
-  const recentNs = epochs.slice(-5).map((e) => e.n);
   const rescuedTotal = (mainnet?.rescuedTotal ?? 0) + (sepolia?.rescuedTotal ?? 0);
   const rescuedCount = (mainnet?.rescuedCount ?? 0) + (sepolia?.rescuedCount ?? 0);
   const pendingTotal = (mainnet?.requestedTotal ?? 0) + (sepolia?.requestedTotal ?? 0);
@@ -377,31 +383,44 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
         </div>
       </div>
 
-      {/* EPOCH PROGRESSION */}
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border border-ls-gray-200 dark:border-ls-gray-800 rounded-2xl px-4 py-2.5 bg-white dark:bg-[#161616]">
-        <span className="text-[10px] uppercase tracking-widest text-ls-gray-500">Epoch</span>
-        <div className="flex items-center gap-2 flex-wrap">
-          {recentNs.length === 0 && <span className="text-ls-gray-400">#—</span>}
-          {recentNs.map((n, i) => {
-            const isLatest = i === recentNs.length - 1;
+      {/* EPOCH CHAIN — one block per scan, hover for detail */}
+      <div className="mt-3 border border-ls-gray-200 dark:border-ls-gray-800 rounded-2xl px-4 py-2.5 bg-white dark:bg-[#161616]">
+        <div className="flex items-center gap-3 mb-2.5">
+          <span className="text-[10px] uppercase tracking-widest text-ls-gray-500">Epoch chain</span>
+          <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ls-gray-100 dark:bg-ls-gray-800 text-[10px] text-ls-gray-500 tracking-wider">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> SCAN ENGINE · LIVE{latest ? ` · ${ago(latest.ts)}` : ""}
+          </span>
+          <span className="text-[10px] text-ls-gray-400 ml-auto hidden sm:inline">one block per scan · hover for detail</span>
+        </div>
+        <div ref={epochScrollRef} className="flex items-center gap-2 overflow-x-auto pb-1">
+          {epochs.length === 0 && <span className="text-ls-gray-400 text-[11px]">no epochs yet — the scanner writes one per run</span>}
+          {epochs.slice(-40).map((e, i, arr) => {
+            const isLatest = i === arr.length - 1;
+            const tone = e.rescued > 0 ? "bg-emerald-500" : e.exposures > 0 ? "bg-amber-500" : "bg-ls-gray-300 dark:bg-ls-gray-600";
             return (
-              <span key={n} className="flex items-center gap-2">
-                <span className={`tabular-nums ${isLatest ? "font-bold text-lg text-black dark:text-white" : "text-sm text-ls-gray-400"}`}>#{n}</span>
-                {!isLatest && <span className="text-ls-gray-300 dark:text-ls-gray-700">→</span>}
-              </span>
+              <div key={e.n} className="flex items-center gap-2 shrink-0">
+                <div className="group relative">
+                  <div className={`w-[68px] rounded-lg border overflow-hidden bg-white dark:bg-[#1b1b1b] transition-colors ${isLatest ? "border-emerald-500/60" : "border-ls-gray-200 dark:border-ls-gray-800"}`}>
+                    <div className={`h-1 w-full ${tone}`} />
+                    <div className="px-2 py-1.5 text-center">
+                      <p className="text-[8px] uppercase tracking-widest text-ls-gray-500">Epoch</p>
+                      <p className="font-bold tabular-nums text-[13px] text-black dark:text-white leading-none mt-0.5">#{e.n}</p>
+                    </div>
+                  </div>
+                  {/* hover tooltip */}
+                  <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 bottom-full mb-2 z-30 hidden group-hover:block whitespace-nowrap rounded-lg border border-ls-gray-200 dark:border-ls-gray-700 bg-white dark:bg-[#0f0f0f] px-3 py-2 text-left shadow-lg">
+                    <p className="font-bold text-black dark:text-white text-[11px] mb-1">Epoch #{e.n}</p>
+                    <p className="text-[10px] text-ls-gray-500">scanned <span className="text-black dark:text-white tabular-nums">{e.scanned}</span> · leaks <span className="text-amber-600 dark:text-amber-500 tabular-nums">{e.exposures}</span></p>
+                    <p className="text-[10px] text-ls-gray-500">rescued <span className="text-emerald-600 dark:text-emerald-400 tabular-nums">{e.rescued}</span></p>
+                    <p className="text-[10px] text-ls-gray-400 mt-0.5">{ago(e.ts)}</p>
+                  </div>
+                </div>
+                {!isLatest && <span className="text-ls-gray-300 dark:text-ls-gray-700 text-xs">→</span>}
+              </div>
             );
           })}
-          {recentNs.length > 0 && <span className="ml-1 w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" title="live" />}
+          {epochs.length > 0 && <span className="self-center w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="live" />}
         </div>
-        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ls-gray-100 dark:bg-ls-gray-800 text-[10px] text-ls-gray-500 tracking-wider">
-          SCAN ENGINE · LIVE{latest ? ` · last ${ago(latest.ts)}` : ""}
-        </span>
-        <span className="text-ls-gray-500 ml-auto">
-          scanned <span className="text-black dark:text-white">{latest?.scanned ?? "—"}</span> · clean{" "}
-          <span className="text-emerald-600 dark:text-emerald-400">{latest?.clean ?? "—"}</span> · exposure{" "}
-          <span className="text-amber-600 dark:text-amber-500">{latest?.exposures ?? 0}</span> · rescued{" "}
-          <span className="text-black dark:text-white">{latest?.rescued ?? 0}</span>
-        </span>
       </div>
 
       {/* MAIN GRID */}
