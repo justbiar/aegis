@@ -3,8 +3,11 @@
 // Live "mission control" console, themed to match the Subframe site (light/dark
 // aware, near-monochrome). Real data (registry repos, vault totals, epoch
 // history) drives it; the scan pass is a client-side visualisation sweeping
-// every repo node with a terminal readout. Asset flows are private — masked
-// amounts, no addresses. Read-only: never calls scan-registry, never rescues.
+// every repo node with a terminal readout. The repo names and every number
+// shown are real, but the sweep itself only visualises a scan that runs
+// server-side — so it deliberately reports no per-repo verdict (see the note
+// on the sweep loop). Asset flows are private — masked amounts, no addresses.
+// Read-only: never calls scan-registry, never rescues.
 //
 // Used both at /console (embedded={false}) and as a section on the home page
 // (embedded). The canvas reads the current theme every frame so it follows the
@@ -291,12 +294,17 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
       while (!cancelled) {
         const order = entries.map((_, i) => i);
         const ep = latestEpochRef.current;
+        // No per-repo verdict is shown here, on purpose. This sweep is a
+        // browser-side visualisation of a scan that actually runs server-side,
+        // so the client genuinely does not know which repo produced a given
+        // finding. Guessing (assigning the real exposure/rescue counts to
+        // randomly chosen repos) used to put a false "EXPOSURE flagged" label
+        // on innocent repos while showing the truly exposed one as clean.
+        // Naming the real one instead would be worse: an un-rescued, funded
+        // leak is exactly what an attacker wants pointed out. So each line
+        // reports only that the repo was covered, and the findings are shown
+        // as real aggregate counts in the summary, feed and ledger.
         const status: Record<number, "clean" | "exposure" | "rescue"> = {};
-        const pick = (n: number, kind: "exposure" | "rescue") => {
-          for (let k = 0; k < n && order.length; k++) status[order[Math.floor(Math.random() * order.length)]] = kind;
-        };
-        pick(ep?.rescued ?? 0, "rescue");
-        pick(ep?.exposures ?? 0, "exposure");
         scanRef.current = { index: -1, order, status };
         setScanning(true);
         pushTerm(`$ aegis scan --registry  (${order.length} repos)`);
@@ -304,17 +312,17 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
           if (cancelled) return;
           scanRef.current.index = i;
           const repo = repoLabel(entries[order[i]]);
-          const st = status[order[i]];
           setProgress(Math.round(((i + 1) / order.length) * 100));
-          if (st || i % 4 === 0 || i === order.length - 1) {
-            const tag = st === "rescue" ? "RESCUE ····.·· STRK -> vault" : st === "exposure" ? "EXPOSURE flagged" : "clean";
-            pushTerm(`> ${repo.slice(0, 34).padEnd(34, " ")} ${tag}`);
+          if (i % 4 === 0 || i === order.length - 1) {
+            pushTerm(`> ${repo.slice(0, 34).padEnd(34, " ")} covered`);
           }
           await sleep(38);
         }
         scanRef.current.index = -1;
         setProgress(100);
-        pushTerm(`ok epoch #${ep?.n ?? "—"} complete · ${order.length} scanned · ${ep?.rescued ?? 0} rescued`);
+        pushTerm(
+          `ok epoch #${ep?.n ?? "—"} · ${ep?.scanned ?? order.length} scanned · ${ep?.clean ?? "—"} clean · ${ep?.exposures ?? 0} exposure(s) · ${ep?.rescued ?? 0} rescued`
+        );
         setScanning(false);
         await sleep(2600);
         if (cancelled) return;
