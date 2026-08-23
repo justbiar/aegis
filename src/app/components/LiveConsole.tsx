@@ -245,7 +245,7 @@ const ago = (ts: number) => {
   return `${Math.floor(s / 3600)}h ago`;
 };
 
-export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
+export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: boolean; vaultBanner?: React.ReactNode }) {
   const clock = useClock();
   const [entries, setEntries] = useState<RegistryEntry[]>([]);
   const [mainnet, setMainnet] = useState<NetInfo | null>(null);
@@ -385,6 +385,9 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
         </div>
       </div>
 
+      {/* VAULTS — mainnet + sepolia balances, folded into the console */}
+      {vaultBanner ? <div className="mt-3">{vaultBanner}</div> : null}
+
       {/* EPOCH CHAIN — one block per scan, hover for detail */}
       <div className="mt-3 border border-ls-gray-200 dark:border-ls-gray-800 rounded-2xl px-4 py-2.5 bg-white dark:bg-[#161616]">
         <div className="flex items-center gap-3 mb-2.5">
@@ -428,11 +431,6 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
       {/* MAIN GRID */}
       <div className="mt-3 grid grid-cols-1 lg:grid-cols-[220px_1fr_240px] gap-3">
         <div className="space-y-3">
-          <Panel title="NETWORKS">
-            <NetRow label="MAINNET" info={mainnet} />
-            <div className="h-px bg-ls-gray-200 dark:bg-ls-gray-800 my-2" />
-            <NetRow label="SEPOLIA" info={sepolia} />
-          </Panel>
           <Panel title="EXPOSURE LEDGER">
             <p className="font-bold tabular-nums leading-none text-black dark:text-white" style={{ fontSize: 30 }}>{totalExposures}</p>
             <p className="text-ls-gray-500 text-[10px] uppercase tracking-widest mt-1 mb-2.5">exposures seen</p>
@@ -544,18 +542,6 @@ function Panel({ title, children }: { title: string; children: React.ReactNode }
     <div className="border border-ls-gray-200 dark:border-ls-gray-800 rounded-2xl bg-white dark:bg-[#161616] px-4 py-3">
       <p className="font-bold tracking-wide mb-2.5 text-black dark:text-white">{title}</p>
       {children}
-    </div>
-  );
-}
-
-function NetRow({ label, info }: { label: string; info: NetInfo | null }) {
-  return (
-    <div>
-      <p className="text-[10px] tracking-widest text-ls-gray-500">{label}</p>
-      <p className="tabular-nums mt-0.5 text-black dark:text-white">
-        {info ? fmt(info.balance ?? 0) : "—"} <span className="text-[10px] text-ls-gray-500">STRK bal</span>
-      </p>
-      <p className="text-ls-gray-500 text-[10px] mt-0.5">rescued {info ? fmt(info.rescuedTotal) : "—"} · {info?.rescuedCount ?? 0} acct</p>
     </div>
   );
 }

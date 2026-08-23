@@ -117,17 +117,21 @@ export default function Page() {
         </div>
       </section>
 
-      {/* ── LIVE CONSOLE + VAULT ────────────────────────────────────────── */}
+      {/* ── LIVE CONSOLE (vault balances folded in) ─────────────────────── */}
       <section id="live" className="pt-12 pb-20">
-        <VaultBanner
-          rescuedCount={rescuedCount}
-          rescuedTotal={rescuedTotal}
-          rescuedCountMainnet={rescuedCountMainnet}
-          rescuedTotalMainnet={rescuedTotalMainnet}
-        />
-
-        <div className="section-container mt-12">
-          <LiveConsole embedded />
+        <div className="section-container">
+          <LiveConsole
+            embedded
+            vaultBanner={
+              <VaultBanner
+                variant="panel"
+                rescuedCount={rescuedCount}
+                rescuedTotal={rescuedTotal}
+                rescuedCountMainnet={rescuedCountMainnet}
+                rescuedTotalMainnet={rescuedTotalMainnet}
+              />
+            }
+          />
 
           <div className="text-center mt-10">
             <p className="eyebrow">Live</p>

@@ -173,6 +173,8 @@ interface VaultBannerProps {
   rescuedTotal: number;
   rescuedCountMainnet?: number;
   rescuedTotalMainnet?: number;
+  /** "band" = full-width bordered strip; "panel" = rounded card that sits inside the console. */
+  variant?: "band" | "panel";
 }
 
 export function VaultBanner({
@@ -180,6 +182,7 @@ export function VaultBanner({
   rescuedTotal,
   rescuedCountMainnet = 0,
   rescuedTotalMainnet = 0,
+  variant = "band",
 }: VaultBannerProps) {
   const [mainnet, setMainnet] = useState<NetworkVaultInfo | null>(null);
   const [sepolia, setSepolia] = useState<NetworkVaultInfo | null>(null);
@@ -196,27 +199,36 @@ export function VaultBanner({
       .catch(() => {});
   }, []);
 
-  return (
-    <div className="border-y border-ls-gray-200 dark:border-ls-gray-800">
-      <div className="section-container">
+  const wrapCls =
+    variant === "panel"
+      ? "rounded-2xl border border-ls-gray-200 dark:border-ls-gray-800 bg-white dark:bg-[#161616] px-4 sm:px-6"
+      : "border-y border-ls-gray-200 dark:border-ls-gray-800";
+
+  const rows = (
+    <>
+      <VaultRow
+        network="mainnet"
+        info={mainnet}
+        ledgerAvailable={ledgerAvailable}
+        liveCount={rescuedCountMainnet}
+        liveTotal={rescuedTotalMainnet}
+      />
+      <div className="border-t border-ls-gray-200 dark:border-ls-gray-800">
         <VaultRow
-          network="mainnet"
-          info={mainnet}
+          network="sepolia"
+          info={sepolia}
           ledgerAvailable={ledgerAvailable}
-          liveCount={rescuedCountMainnet}
-          liveTotal={rescuedTotalMainnet}
+          liveCount={rescuedCount}
+          liveTotal={rescuedTotal}
+          compact
         />
-        <div className="border-t border-ls-gray-200 dark:border-ls-gray-800">
-          <VaultRow
-            network="sepolia"
-            info={sepolia}
-            ledgerAvailable={ledgerAvailable}
-            liveCount={rescuedCount}
-            liveTotal={rescuedTotal}
-            compact
-          />
-        </div>
       </div>
+    </>
+  );
+
+  return (
+    <div className={wrapCls}>
+      {variant === "panel" ? rows : <div className="section-container">{rows}</div>}
     </div>
   );
 }
