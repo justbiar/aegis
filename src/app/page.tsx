@@ -8,7 +8,6 @@ import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
 import { VaultBanner } from "./components/VaultBanner";
 import { ClaimPanel } from "./components/ClaimPanel";
-import { HeroVisual } from "./components/HeroVisual";
 import type { ScanResult } from "@/lib/scan";
 
 const STEPS = [
@@ -155,7 +154,17 @@ export default function Page() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.15 }}
             >
-              <HeroVisual />
+              {/* Subframe "product showcase frame": a monochrome graphite-on-vellum
+                  illustration (leaked key → node mesh → shielded vault) in a 24px
+                  hairline-bordered frame, no shadow. */}
+              <div className="rounded-3xl border border-ls-gray-200 overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src="/hero-shield.png"
+                  alt="A leaked key swept into the STRK20 shielded vault"
+                  className="w-full h-auto block"
+                />
+              </div>
             </motion.div>
           </div>
         </div>
