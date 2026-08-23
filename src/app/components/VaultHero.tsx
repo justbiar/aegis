@@ -86,7 +86,15 @@ export function VaultHero() {
       }
       if (site) {
         const s = S0 + (1 - S0) * r;
-        site.style.transformOrigin = `${ORIGIN_X}% ${ORIGIN_Y}%`;
+        // #site-shell is the height of the WHOLE page (thousands of px), not
+        // just the viewport — a percentage transform-origin is relative to
+        // the element's OWN box, so "48% 48%" would anchor deep below the
+        // fold and make the visible top of the page slide up from there
+        // (exactly the "opens from the bottom" bug). Body scroll is locked
+        // at 0 during the intro, so the viewport IS the top of that element;
+        // anchor in viewport pixels instead so the zoom centres on what's
+        // actually on screen.
+        site.style.transformOrigin = `${(window.innerWidth * ORIGIN_X) / 100}px ${(window.innerHeight * ORIGIN_Y) / 100}px`;
         site.style.transform = `scale(${s})`;
         site.style.opacity = String(0.4 + 0.6 * r);
       }
