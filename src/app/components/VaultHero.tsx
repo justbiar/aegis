@@ -1,10 +1,12 @@
 "use client";
 
 // One-shot cinematic opening. A full-screen overlay shows the sealed vault. The
-// first scroll/tap plays the vault-open clip once; as the door opens, a circular
-// aperture grows from the vault's centre and the REAL site (sitting behind the
-// overlay) shows through it — so you first glimpse the site inside the vault,
-// then it opens up to full screen. Plays once per session; skipped on reduced
+// first scroll/tap plays the vault-open clip once; a circular aperture only
+// starts growing once the clip's own interior light actually appears (timed
+// and positioned from measurements of the real frames, see ORIGIN_X/Y and
+// REVEAL_START below) — the REAL site (sitting behind the overlay) shows
+// through that aperture, so you glimpse it deep inside the lit opening first,
+// then it grows to full screen. Plays once per session; skipped on reduced
 // motion.
 
 import { useEffect, useRef, useState } from "react";
@@ -49,19 +51,41 @@ export function VaultHero() {
     let raf = 0;
     let finished = false;
 
+    // Measured directly off the actual clip's frames (1280x720):
+    //   t < ~2.1s   — door is only cracked open, interior is pitch black.
+    //   t ≈ 2.3s    — the first sliver of interior light appears.
+    //   t ≈ 3.9s    — the lit opening reads as a clear window, centred at
+    //                 roughly 41% / 50% of the frame (not the frame's own
+    //                 centre — the door swings left, so the opening sits
+    //                 left-of-centre).
+    // The reveal is timed to that real light, not a guessed fraction of the
+    // clip — otherwise the site peeks through while the vault is still shown
+    // as a black gap, which reads as "blackness" appearing before it opens.
+    const ORIGIN_X = 41;
+    const ORIGIN_Y = 50;
+    const REVEAL_START = 0.455; // ≈ t=2.3s of 5.06s — when light first appears
+    const REVEAL_SPAN = 0.545;
+
     // reveal 0 → 1: the vault opening (mask hole) grows, and the real site
     // behind it scales up from deep inside toward the camera → feels like flying
     // into the vault to the site sitting at its back, not a flat cut-out.
     const applyState = (r: number) => {
       if (overlay) {
-        const hole = r * 155;
-        const mask = `radial-gradient(circle at 50% 46%, transparent ${hole}%, black ${hole + 10}%)`;
-        overlay.style.webkitMaskImage = mask;
-        overlay.style.maskImage = mask;
+        if (r <= 0) {
+          // Fully opaque — no mask at all, so there is no chance of the site
+          // leaking through before the door has actually started opening.
+          overlay.style.webkitMaskImage = "none";
+          overlay.style.maskImage = "none";
+        } else {
+          const hole = r * 155;
+          const mask = `radial-gradient(circle at ${ORIGIN_X}% ${ORIGIN_Y}%, transparent ${hole}%, black ${hole + 10}%)`;
+          overlay.style.webkitMaskImage = mask;
+          overlay.style.maskImage = mask;
+        }
       }
       if (site) {
         const s = S0 + (1 - S0) * r;
-        site.style.transformOrigin = "50% 46%";
+        site.style.transformOrigin = `${ORIGIN_X}% ${ORIGIN_Y}%`;
         site.style.transform = `scale(${s})`;
         site.style.opacity = String(0.4 + 0.6 * r);
       }
@@ -93,8 +117,7 @@ export function VaultHero() {
       const v = videoRef.current;
       if (v && v.duration) {
         const p = v.currentTime / v.duration;
-        // The site emerges once the door begins to crack (~35% of the clip).
-        const reveal = Math.min(Math.max((p - 0.35) / 0.63, 0), 1);
+        const reveal = Math.min(Math.max((p - REVEAL_START) / REVEAL_SPAN, 0), 1);
         applyState(reveal);
         if (v.ended || p >= 0.995) {
           applyState(1);
