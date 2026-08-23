@@ -3,33 +3,13 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useSession, signIn } from "next-auth/react";
-import { ShieldCheck, ScanSearch, Lock, KeyRound, ExternalLink, Eye, EyeOff, ArrowRight } from "lucide-react";
+import { ShieldCheck, KeyRound, ExternalLink, Eye, EyeOff, ArrowRight } from "lucide-react";
 import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
 import { VaultBanner } from "./components/VaultBanner";
 import { ClaimPanel } from "./components/ClaimPanel";
+import { LiveConsole } from "./components/LiveConsole";
 import type { ScanResult } from "@/lib/scan";
-
-const STEPS = [
-  {
-    icon: <ScanSearch size={22} />,
-    step: "01",
-    title: "Detect",
-    description: "A leaked private key or seed phrase turns up in a public repo, still holding funds.",
-  },
-  {
-    icon: <Lock size={22} />,
-    step: "02",
-    title: "Shield",
-    description: "The exposed balance is swept into the STRK20 shielded pool before an attacker can drain it. The holding position is unlinkable on-chain.",
-  },
-  {
-    icon: <KeyRound size={22} />,
-    step: "03",
-    title: "Claim",
-    description: "The owner signs in with the GitHub account that leaked the key, proving they control the repo, and gets the funds back in full.",
-  },
-];
 
 export default function Page() {
   const { status: authStatus } = useSession();
@@ -172,39 +152,20 @@ export default function Page() {
 
       <ClaimPanel />
 
-      {/* ── HOW IT WORKS ────────────────────────────────────────────────── */}
-      <section id="how-it-works" className="py-20">
+      {/* ── LIVE CONSOLE (embedded) ─────────────────────────────────────── */}
+      <section id="live" className="py-20">
         <div className="section-container">
-          <div className="text-center mb-12">
-            <p className="eyebrow">
-              How it works
-            </p>
-            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-black dark:text-white tracking-tight">
-              Three steps, no human in the loop
+          <div className="text-center mb-10">
+            <p className="eyebrow">Live</p>
+            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-black dark:text-white tracking-tight mb-3">
+              The agent, running right now
             </h2>
+            <p className="text-ls-gray-500 dark:text-ls-gray-400 max-w-xl mx-auto">
+              Every registered repo, scanned continuously — funds flow privately into the shielded vault.{" "}
+              <a href="/console" className="link-arrow">Open the full console →</a>
+            </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            {STEPS.map((s, i) => (
-              <motion.div
-                key={s.title}
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.1 }}
-                className="ls-card"
-              >
-                <div className="w-10 h-10 rounded-xl bg-black dark:bg-white flex items-center justify-center
-                  text-white dark:text-black mb-4">
-                  {s.icon}
-                </div>
-                <p className="text-xs font-mono text-ls-gray-400 mb-1">{s.step}</p>
-                <h3 className="font-bold text-black dark:text-white mb-2">{s.title}</h3>
-                <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400 leading-relaxed">
-                  {s.description}
-                </p>
-              </motion.div>
-            ))}
-          </div>
+          <LiveConsole embedded />
         </div>
       </section>
 

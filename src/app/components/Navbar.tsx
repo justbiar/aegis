@@ -8,8 +8,8 @@ import ConnectGithub from "./client/GithubHandle/ConnectGithub";
 import { ThemeToggle } from "./ThemeToggle";
 
 const NAV_LINKS = [
-  { label: "How it works", href: "#how-it-works" },
-  { label: "Coverage", href: "#registry" },
+  { label: "How it works", href: "/how-it-works" },
+  { label: "Coverage", href: "/#registry" },
   { label: "Live console", href: "/console" },
 ];
 
