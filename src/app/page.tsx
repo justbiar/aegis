@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { ExternalLink } from "lucide-react";
+import { useSession, signIn } from "next-auth/react";
+import { KeyRound, ExternalLink } from "lucide-react";
 import { Navbar } from "./components/Navbar";
 import { VaultHero } from "./components/VaultHero";
 import { RegistryTable } from "./components/RegistryTable";
@@ -11,6 +12,7 @@ import { LiveConsole } from "./components/LiveConsole";
 import type { ScanResult } from "@/lib/scan";
 
 export default function Page() {
+  const { status: authStatus } = useSession();
   const [rescuedCount, setRescuedCount] = useState(0);
   const [rescuedTotal, setRescuedTotal] = useState(0);
   const [rescuedCountMainnet, setRescuedCountMainnet] = useState(0);
@@ -46,8 +48,74 @@ export default function Page() {
       </a>
       <Navbar />
       <main id="main-content">
-      {/* ── CINEMATIC VAULT HERO (scroll-driven, full screen) ───────────── */}
+      {/* ── CINEMATIC VAULT INTRO (one-shot, full screen overlay) ───────── */}
       <VaultHero />
+
+      {/* ── HERO (text) ─────────────────────────────────────────────────── */}
+      <section className="relative pt-28 pb-16">
+        <div className="ambient-glow" aria-hidden />
+        <div className="section-container">
+          <div className="max-w-3xl">
+            <div className="flex items-center gap-3 mb-7">
+              <div className="ls-badge">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                STRK20 Private Sprint
+              </div>
+              <span className="spectrum-bar h-1 w-14 inline-block" aria-hidden />
+            </div>
+            <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl font-semibold text-black dark:text-white leading-[0.95] tracking-tight mb-6">
+              Whitehat rescue for{" "}
+              <span className="font-serif font-normal italic tracking-tight" style={{ color: "var(--ink)" }}>
+                leaked keys
+              </span>
+            </h1>
+            <p className="text-lg text-ls-gray-500 dark:text-ls-gray-400 leading-relaxed mb-9 max-w-xl">
+              Aegis scans public repos for accidentally committed keys that
+              control real funds, sweeps them into the STRK20 shielded pool
+              before an attacker can, and returns them once you prove you own
+              the repo.
+            </p>
+            <div className="flex flex-wrap items-center gap-4">
+              {authStatus === "authenticated" ? (
+                <a href="#claim" className="btn-primary text-base px-8 py-3.5">
+                  <KeyRound size={16} /> Check your claim
+                </a>
+              ) : (
+                <button
+                  onClick={() => signIn("github")}
+                  disabled={authStatus === "loading"}
+                  className="btn-primary text-base px-8 py-3.5 disabled:opacity-50"
+                >
+                  <KeyRound size={16} /> Connect GitHub
+                </button>
+              )}
+              <a href="#live" className="btn-ghost text-base px-8 py-3.5">
+                See it live →
+              </a>
+              <a
+                href="https://github.com/justbiar/aegis"
+                target="_blank"
+                rel="noreferrer"
+                className="link-arrow text-sm text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white ml-1"
+              >
+                <ExternalLink size={15} /> View source
+              </a>
+            </div>
+            <div className="flex items-center gap-8 mt-12 pt-8 ls-divider">
+              {[
+                { label: "Network", value: "Starknet" },
+                { label: "Privacy layer", value: "STRK20 pool" },
+                { label: "License", value: "MIT" },
+              ].map((t) => (
+                <div key={t.label}>
+                  <p className="text-xs text-ls-gray-400">{t.label}</p>
+                  <p className="text-sm font-semibold text-black dark:text-white">{t.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* ── LIVE CONSOLE + VAULT ────────────────────────────────────────── */}
       <section id="live" className="pt-12 pb-20">
