@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Shield, Menu, X } from "lucide-react";
+import { Menu, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import SelectWallet from "./client/WalletHandle/SelectWallet";
 import ConnectGithub from "./client/GithubHandle/ConnectGithub";
@@ -33,9 +33,12 @@ export function Navbar() {
     >
       <div className="section-container h-16 flex items-center justify-between">
         <a href="/" className="flex items-center gap-2.5">
-          <div className="flex items-center justify-center w-8 h-8 bg-black dark:bg-white rounded-lg">
-            <Shield size={16} className="text-white dark:text-black" />
-          </div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src="/logo.png"
+            alt="Aegis"
+            className="w-8 h-8 rounded-lg border border-ls-gray-200 dark:border-ls-gray-800"
+          />
           <span className="font-display font-semibold text-lg tracking-tight text-black dark:text-white">
             Aegis
           </span>

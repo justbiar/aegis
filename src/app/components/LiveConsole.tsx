@@ -354,7 +354,8 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
       <div className="flex flex-wrap items-center justify-between gap-3 border border-ls-gray-200 dark:border-ls-gray-800 rounded-2xl px-4 py-3 bg-white dark:bg-[#161616]">
         {embedded ? (
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold" style={{ background: "var(--graphite)", color: "var(--on-graphite)" }}>A</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Aegis" className="w-8 h-8 rounded-lg border border-ls-gray-200 dark:border-ls-gray-800" />
             <div>
               <p className="font-bold tracking-wide text-sm">LIVE CONSOLE</p>
               <p className="text-ls-gray-500 text-[10px] tracking-widest uppercase">the agent, running · read-only</p>
@@ -362,7 +363,8 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
           </div>
         ) : (
           <a href="/" className="flex items-center gap-3 group">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center font-bold group-hover:opacity-80 transition-opacity" style={{ background: "var(--graphite)", color: "var(--on-graphite)" }}>A</div>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo.png" alt="Aegis" className="w-8 h-8 rounded-lg border border-ls-gray-200 dark:border-ls-gray-800 group-hover:opacity-80 transition-opacity" />
             <div>
               <p className="font-bold tracking-wide text-sm">AEGIS · WHITEHAT RESCUE AGENT</p>
               <p className="text-ls-gray-500 text-[10px] tracking-widest uppercase">Starknet · STRK20 shielded pool · ← back to site</p>

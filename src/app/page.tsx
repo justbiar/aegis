@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useSession, signIn } from "next-auth/react";
-import { ShieldCheck, KeyRound, ExternalLink } from "lucide-react";
+import { KeyRound, ExternalLink } from "lucide-react";
 import { Navbar } from "./components/Navbar";
 import { RegistryTable } from "./components/RegistryTable";
 import { VaultBanner } from "./components/VaultBanner";
@@ -199,9 +199,8 @@ export default function Page() {
         <div className="section-container py-12">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: "var(--graphite)" }}>
-                <ShieldCheck size={14} style={{ color: "var(--on-graphite)" }} />
-              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/logo.png" alt="Aegis" className="w-7 h-7 rounded-lg border border-ls-gray-200 dark:border-ls-gray-800" />
               <span className="font-bold text-black dark:text-white">Aegis</span>
             </div>
             <p className="text-ls-gray-500 text-xs">
