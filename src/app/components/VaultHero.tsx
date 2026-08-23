@@ -51,20 +51,21 @@ export function VaultHero() {
     let raf = 0;
     let finished = false;
 
-    // Measured directly off the actual clip's frames (1280x720):
-    //   t < ~2.1s   — door is only cracked open, interior is pitch black.
-    //   t ≈ 2.3s    — the first sliver of interior light appears.
-    //   t ≈ 3.9s    — the lit opening reads as a clear window, centred at
-    //                 roughly 41% / 50% of the frame (not the frame's own
-    //                 centre — the door swings left, so the opening sits
-    //                 left-of-centre).
-    // The reveal is timed to that real light, not a guessed fraction of the
-    // clip — otherwise the site peeks through while the vault is still shown
-    // as a black gap, which reads as "blackness" appearing before it opens.
-    const ORIGIN_X = 41;
-    const ORIGIN_Y = 50;
-    const REVEAL_START = 0.455; // ≈ t=2.3s of 5.06s — when light first appears
-    const REVEAL_SPAN = 0.545;
+    // Measured directly off the actual clip's frames (1280x720, 5.06s): the
+    // lit opening is a narrow, moving, perspective-shifting rectangle for
+    // most of the clip (a circular CSS mask can't track that without either
+    // lagging behind or overshooting past its edges onto the still-shut door
+    // — which is exactly what read as "opens too early"). By t≈4.3s the door
+    // has swung open far enough that the bright interior fills almost the
+    // entire frame (only thin door-edge slivers remain at the far left/right),
+    // roughly centred. So instead of chasing the aperture's shape while it's
+    // still small and off-centre, the reveal only starts once the vault is
+    // unmistakably, fully open — the mismatch between a circle and the real
+    // opening no longer matters once the opening IS basically the whole frame.
+    const ORIGIN_X = 48;
+    const ORIGIN_Y = 48;
+    const REVEAL_START = 0.85; // = 4.3 / 5.056 — vault reads as fully open by here
+    const REVEAL_SPAN = 0.15;
 
     // reveal 0 → 1: the vault opening (mask hole) grows, and the real site
     // behind it scales up from deep inside toward the camera → feels like flying
