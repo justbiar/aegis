@@ -46,17 +46,6 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const repoLabel = (e?: RegistryEntry) => (e?.repo_url ?? "").replace("https://github.com/", "") || e?.name || "repo";
 const isDarkNow = () => typeof document !== "undefined" && document.documentElement.classList.contains("dark");
 
-function useClock() {
-  const [t, setT] = useState("--:--:--");
-  useEffect(() => {
-    const tick = () => setT(new Date().toISOString().slice(11, 19));
-    tick();
-    const id = setInterval(tick, 1000);
-    return () => clearInterval(id);
-  }, []);
-  return t;
-}
-
 // ── Canvas graph — theme-aware, near-monochrome. ────────────────────────────
 function GraphCanvas({ entries, scanRef, rescueTick }: { entries: RegistryEntry[]; scanRef: React.MutableRefObject<ScanState>; rescueTick: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -246,7 +235,6 @@ const ago = (ts: number) => {
 };
 
 export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: boolean; vaultBanner?: React.ReactNode }) {
-  const clock = useClock();
   const [entries, setEntries] = useState<RegistryEntry[]>([]);
   const [mainnet, setMainnet] = useState<NetInfo | null>(null);
   const [sepolia, setSepolia] = useState<NetInfo | null>(null);
@@ -340,9 +328,7 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
   }, [entries]);
 
   const latest = epochs[epochs.length - 1];
-  const rescuedTotal = (mainnet?.rescuedTotal ?? 0) + (sepolia?.rescuedTotal ?? 0);
   const rescuedCount = (mainnet?.rescuedCount ?? 0) + (sepolia?.rescuedCount ?? 0);
-  const pendingTotal = (mainnet?.requestedTotal ?? 0) + (sepolia?.requestedTotal ?? 0);
   const pendingCount = (mainnet?.requestedCount ?? 0) + (sepolia?.requestedCount ?? 0);
   const loaded = mainnet !== null || sepolia !== null;
   const totalExposures = epochs.reduce((s, e) => s + e.exposures, 0);
@@ -373,15 +359,10 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
         )}
         <div className="flex items-center gap-5">
           <Stat label="Repos" value={String(entries.length || "—")} />
-          <Stat label="Rescued" value={loaded ? fmt(rescuedTotal) : "—"} sub="STRK" positive />
           <Stat label="Accounts" value={loaded ? String(rescuedCount) : "—"} />
-          <Stat label="Pending" value={loaded ? fmt(pendingTotal) : "—"} sub="STRK" />
-          <div className="text-right">
-            <p className="font-bold tabular-nums text-sm">{clock}</p>
-            <p className="text-ls-gray-500 text-[10px] flex items-center gap-1 justify-end">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> UTC
-            </p>
-          </div>
+          <span className="inline-flex items-center gap-1.5 text-[10px] text-ls-gray-500 tracking-wider">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> LIVE
+          </span>
         </div>
       </div>
 
