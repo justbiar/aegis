@@ -12,22 +12,29 @@ function summarize(results: ScanResult[]) {
   let rescued = 0;
   let rescuedStrk = 0;
   let errors = 0;
+  // Record which repos produced a finding so the live console can mark the
+  // real one rather than guessing. Strip to owner/name — no key material,
+  // no addresses, and nothing the Coverage table doesn't already publish.
+  const flagged: { repo: string; kind: "exposure" | "rescue" }[] = [];
   for (const r of results) {
     if (r.status === "error") errors++;
     else if (r.status === "leak") {
       const swept = r.findings.filter((f) => f.rescueTxHash);
+      const repo = r.repoUrl.replace("https://github.com/", "");
       if (swept.length > 0) {
         rescued++;
         rescuedStrk += swept.reduce((s, f) => s + (f.rescueAmount ?? 0), 0);
+        flagged.push({ repo, kind: "rescue" });
       } else {
         exposures++;
+        flagged.push({ repo, kind: "exposure" });
       }
     } else {
       // clean, info (key with no impact), or not-scanned — all "nothing to do"
       clean++;
     }
   }
-  return { scanned: results.length, clean, exposures, rescued, rescuedStrk, errors };
+  return { scanned: results.length, clean, exposures, rescued, rescuedStrk, errors, flagged };
 }
 
 const CONCURRENCY = 8;

@@ -37,6 +37,9 @@ interface Epoch {
   rescuedStrk: number;
   errors: number;
   durationMs: number;
+  // Repos that actually produced a finding in that scan ("owner/name"). Absent
+  // on epochs recorded before the scanner started reporting it.
+  flagged?: { repo: string; kind: "exposure" | "rescue" }[];
 }
 interface ScanState {
   index: number;
@@ -294,17 +297,21 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
       while (!cancelled) {
         const order = entries.map((_, i) => i);
         const ep = latestEpochRef.current;
-        // No per-repo verdict is shown here, on purpose. This sweep is a
-        // browser-side visualisation of a scan that actually runs server-side,
-        // so the client genuinely does not know which repo produced a given
-        // finding. Guessing (assigning the real exposure/rescue counts to
-        // randomly chosen repos) used to put a false "EXPOSURE flagged" label
-        // on innocent repos while showing the truly exposed one as clean.
-        // Naming the real one instead would be worse: an un-rescued, funded
-        // leak is exactly what an attacker wants pointed out. So each line
-        // reports only that the repo was covered, and the findings are shown
-        // as real aggregate counts in the summary, feed and ledger.
+        // Per-repo verdicts come from the last real server-side scan, matched
+        // by repo name. Never guessed: an earlier version spread the real
+        // exposure/rescue counts over randomly picked repos, which labelled
+        // innocent repos as exposed and showed the actually-exposed one as
+        // clean. Repos the scan didn't flag are reported as covered rather
+        // than "clean", since this sweep is a visualisation and the verdict
+        // it can honestly report is "the scanner reached this repo".
         const status: Record<number, "clean" | "exposure" | "rescue"> = {};
+        const flaggedBy = new Map((ep?.flagged ?? []).map((f) => [f.repo, f.kind]));
+        if (flaggedBy.size > 0) {
+          for (const i of order) {
+            const kind = flaggedBy.get(repoLabel(entries[i]));
+            if (kind) status[i] = kind;
+          }
+        }
         scanRef.current = { index: -1, order, status };
         setScanning(true);
         pushTerm(`$ aegis scan --registry  (${order.length} repos)`);
@@ -312,9 +319,16 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
           if (cancelled) return;
           scanRef.current.index = i;
           const repo = repoLabel(entries[order[i]]);
+          const st = status[order[i]];
           setProgress(Math.round(((i + 1) / order.length) * 100));
-          if (i % 4 === 0 || i === order.length - 1) {
-            pushTerm(`> ${repo.slice(0, 34).padEnd(34, " ")} covered`);
+          if (st || i % 4 === 0 || i === order.length - 1) {
+            const tag =
+              st === "rescue"
+                ? "RESCUE ····.·· STRK -> vault"
+                : st === "exposure"
+                  ? "EXPOSURE flagged"
+                  : "covered";
+            pushTerm(`> ${repo.slice(0, 34).padEnd(34, " ")} ${tag}`);
           }
           await sleep(38);
         }

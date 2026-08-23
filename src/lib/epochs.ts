@@ -22,6 +22,12 @@ export interface EpochRecord {
   rescuedStrk: number; // STRK swept this epoch
   errors: number; // repos that errored
   durationMs: number;
+  // Which repos actually produced a finding this scan. Lets the live console
+  // mark the real repo instead of guessing, and stays small (a scan normally
+  // flags 0-1 repos). Optional: epochs recorded before this field existed
+  // simply have none. Not a disclosure beyond what the site already shows —
+  // the Coverage table publishes per-repo scan status on the same page.
+  flagged?: { repo: string; kind: "exposure" | "rescue" }[];
 }
 
 export const epochsAvailable = Boolean(KV_URL && KV_TOKEN);
