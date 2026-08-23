@@ -1,22 +1,22 @@
 "use client";
 
-// One-shot cinematic opening. On load a full-screen overlay covers the page
-// showing the sealed vault. The first scroll/tap plays the vault-open clip once
-// (camera glides in), then the overlay zooms through the opening and fades away
-// for good — the site is revealed and stays open (no scrubbing back and forth).
-// Skipped on reduced-motion and after it has played once in the session.
+// One-shot cinematic opening. A full-screen overlay shows the sealed vault. The
+// first scroll/tap plays the vault-open clip once; as the door opens, a circular
+// aperture grows from the vault's centre and the REAL site (sitting behind the
+// overlay) shows through it — so you first glimpse the site inside the vault,
+// then it opens up to full screen. Plays once per session; skipped on reduced
+// motion.
 
 import { useEffect, useRef, useState } from "react";
 
 export function VaultHero() {
+  const overlayRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const [visible, setVisible] = useState(true);
-  const [started, setStarted] = useState(false); // intent received → playing
-  const [exiting, setExiting] = useState(false); // final zoom-through + fade
+  const [started, setStarted] = useState(false);
   const startedRef = useRef(false);
 
   useEffect(() => {
-    // Already seen this session, or reduced motion → don't gate the site.
     let skip = false;
     try {
       skip = sessionStorage.getItem("aegis_intro_done") === "1";
@@ -31,6 +31,7 @@ export function VaultHero() {
     document.body.style.overflow = "hidden";
 
     const video = videoRef.current;
+    const overlay = overlayRef.current;
     if (video) {
       const pin = () => {
         video.currentTime = 0;
@@ -40,15 +41,44 @@ export function VaultHero() {
       else video.addEventListener("loadedmetadata", pin, { once: true });
     }
 
+    let raf = 0;
+    let finished = false;
+
+    const applyReveal = (r: number) => {
+      if (!overlay) return;
+      const hole = r * 155; // % of the shorter side
+      const mask = `radial-gradient(circle at 50% 46%, transparent ${hole}%, black ${hole + 10}%)`;
+      overlay.style.webkitMaskImage = mask;
+      overlay.style.maskImage = mask;
+    };
+
     const finish = () => {
-      setExiting(true);
+      if (finished) return;
+      finished = true;
+      cancelAnimationFrame(raf);
       document.body.style.overflow = "";
       try {
         sessionStorage.setItem("aegis_intro_done", "1");
       } catch {
         /* ignore */
       }
-      window.setTimeout(() => setVisible(false), 850);
+      setVisible(false);
+    };
+
+    const loop = () => {
+      const v = videoRef.current;
+      if (v && v.duration) {
+        const p = v.currentTime / v.duration;
+        // Aperture opens from ~35% of the clip (door cracking) to the end.
+        const reveal = Math.min(Math.max((p - 0.35) / 0.63, 0), 1);
+        applyReveal(reveal);
+        if (v.ended || p >= 0.995) {
+          applyReveal(1);
+          finish();
+          return;
+        }
+      }
+      raf = requestAnimationFrame(loop);
     };
 
     const begin = () => {
@@ -57,10 +87,10 @@ export function VaultHero() {
       setStarted(true);
       const v = videoRef.current;
       if (v && v.duration) {
-        v.playbackRate = 1.4;
+        v.playbackRate = 1.25;
         v.play().catch(() => {});
-        v.onended = finish;
-        window.setTimeout(finish, 6000); // safety net
+        raf = requestAnimationFrame(loop);
+        window.setTimeout(finish, 8000); // safety net
       } else {
         finish();
       }
@@ -68,17 +98,21 @@ export function VaultHero() {
 
     const onWheel = () => begin();
     const onTouch = () => begin();
+    const onClick = () => begin();
     const onKey = (e: KeyboardEvent) => {
       if (["ArrowDown", "PageDown", " ", "Enter"].includes(e.key)) begin();
     };
     window.addEventListener("wheel", onWheel, { passive: true });
     window.addEventListener("touchmove", onTouch, { passive: true });
+    window.addEventListener("click", onClick);
     window.addEventListener("keydown", onKey);
 
     return () => {
+      cancelAnimationFrame(raf);
       document.body.style.overflow = "";
       window.removeEventListener("wheel", onWheel);
       window.removeEventListener("touchmove", onTouch);
+      window.removeEventListener("click", onClick);
       window.removeEventListener("keydown", onKey);
     };
   }, []);
@@ -87,29 +121,8 @@ export function VaultHero() {
 
   return (
     <div
-      className="fixed inset-0 z-[70] overflow-hidden bg-[#fafafa] dark:bg-[#0d0d0d] transition-[opacity,transform] duration-[850ms] ease-out cursor-pointer"
-      style={{ opacity: exiting ? 0 : 1, transform: exiting ? "scale(1.35)" : "scale(1)", transformOrigin: "50% 46%" }}
-      onClick={() => {
-        if (!startedRef.current) {
-          startedRef.current = true;
-          setStarted(true);
-          const v = videoRef.current;
-          if (v && v.duration) {
-            v.playbackRate = 1.4;
-            v.play().catch(() => {});
-            v.onended = () => {
-              setExiting(true);
-              document.body.style.overflow = "";
-              try {
-                sessionStorage.setItem("aegis_intro_done", "1");
-              } catch {
-                /* ignore */
-              }
-              window.setTimeout(() => setVisible(false), 850);
-            };
-          }
-        }
-      }}
+      ref={overlayRef}
+      className="fixed inset-0 z-[70] overflow-hidden bg-[#fafafa] dark:bg-[#0d0d0d] cursor-pointer"
       role="button"
       aria-label="Enter Aegis — open the vault"
     >
