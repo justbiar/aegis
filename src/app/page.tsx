@@ -55,6 +55,23 @@ export default function Page() {
           rescuedTotalMainnet={rescuedTotalMainnet}
         />
 
+      {/* ── LIVE CONSOLE (embedded) ─────────────────────────────────────── */}
+      <section id="live" className="py-20">
+        <div className="section-container">
+          <div className="text-center mb-10">
+            <p className="eyebrow">Live</p>
+            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-black dark:text-white tracking-tight mb-3">
+              The agent, running right now
+            </h2>
+            <p className="text-ls-gray-500 dark:text-ls-gray-400 max-w-xl mx-auto">
+              Every registered repo, scanned continuously — funds flow privately into the shielded vault.{" "}
+              <a href="/console" className="link-arrow">Open the full console →</a>
+            </p>
+          </div>
+          <LiveConsole embedded />
+        </div>
+      </section>
+
       {/* ── HERO ─────────────────────────────────────────────────────────── */}
       <section className="relative pt-32 pb-20">
         <div className="ambient-glow" aria-hidden />
@@ -151,23 +168,6 @@ export default function Page() {
       </section>
 
       <ClaimPanel />
-
-      {/* ── LIVE CONSOLE (embedded) ─────────────────────────────────────── */}
-      <section id="live" className="py-20">
-        <div className="section-container">
-          <div className="text-center mb-10">
-            <p className="eyebrow">Live</p>
-            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-black dark:text-white tracking-tight mb-3">
-              The agent, running right now
-            </h2>
-            <p className="text-ls-gray-500 dark:text-ls-gray-400 max-w-xl mx-auto">
-              Every registered repo, scanned continuously — funds flow privately into the shielded vault.{" "}
-              <a href="/console" className="link-arrow">Open the full console →</a>
-            </p>
-          </div>
-          <LiveConsole embedded />
-        </div>
-      </section>
 
       {/* ── REGISTRY SCAN ───────────────────────────────────────────────── */}
       <section id="registry" className="py-24">
