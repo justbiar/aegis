@@ -39,7 +39,9 @@ const KNOWN_TEST_KEYS = new Set([
 
 export interface ScanFinding {
   file: string;
-  kind: "private_key" | "github_token" | "alchemy_key";
+  kind: "private_key" | "github_token" | "alchemy_key" | "provider_secret";
+  // Set for provider_secret findings: which rule matched (e.g. "aws-access-key-id").
+  ruleId?: string;
   masked: string;
   severity: "info" | "warning";
   detail: string;
@@ -150,6 +152,57 @@ function findPairedAddress(content: string): string | null {
 function findGithubTokens(content: string): string[] {
   const m = content.match(/gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{22,}/g);
   return m ? Array.from(new Set(m)) : [];
+}
+
+// Provider-credential rules, in the style of (and with patterns derived from)
+// Gitleaks' default ruleset — MIT licensed, https://github.com/gitleaks/gitleaks
+//
+// These run in memory over the file contents already fetched above: no clone,
+// no disk, no extra network call. Deliberately limited to prefixed, uniquely
+// shaped credentials — the kind with a vendor marker in the token itself —
+// because unanchored "high entropy string" rules are what make scanners cry
+// wolf on other people's repos.
+//
+// Everything found here is reported as `info`, never `warning`: unlike a
+// Starknet key (balance-checked) or a GitHub/Alchemy key (liveness-checked),
+// there is no way to confirm one of these is still valid without trying to
+// use someone else's credential, which this project will not do. So they are
+// surfaced to the repo owner without being counted as a verified exposure.
+interface ProviderRule {
+  id: string;
+  label: string;
+  pattern: RegExp;
+}
+
+const PROVIDER_RULES: ProviderRule[] = [
+  { id: "aws-access-key-id", label: "AWS access key ID", pattern: /\b(?:A3T[A-Z0-9]|AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b/g },
+  { id: "gitlab-pat", label: "GitLab personal access token", pattern: /\bglpat-[0-9a-zA-Z_-]{20}\b/g },
+  { id: "slack-token", label: "Slack token", pattern: /\bxox[baprs]-[0-9a-zA-Z-]{10,72}\b/g },
+  { id: "stripe-secret-key", label: "Stripe secret key", pattern: /\b(?:sk|rk)_(?:live|test)_[0-9a-zA-Z]{24,}\b/g },
+  // Anthropic before OpenAI: an `sk-ant-…` key also satisfies the looser
+  // `sk-…` shape, and first match wins, so the specific rule has to come first
+  // or the finding gets labelled with the wrong vendor.
+  { id: "anthropic-api-key", label: "Anthropic API key", pattern: /\bsk-ant-[A-Za-z0-9_-]{24,}\b/g },
+  { id: "openai-api-key", label: "OpenAI API key", pattern: /\bsk-(?:proj-)?[A-Za-z0-9_-]{32,}\b/g },
+  { id: "google-api-key", label: "Google API key", pattern: /\bAIza[0-9A-Za-z_-]{35}\b/g },
+  { id: "npm-access-token", label: "npm access token", pattern: /\bnpm_[A-Za-z0-9]{36}\b/g },
+  { id: "private-key-block", label: "PEM private key block", pattern: /-----BEGIN[ A-Z]{0,20}PRIVATE KEY-----/g },
+];
+
+function findProviderSecrets(content: string): { rule: ProviderRule; secret: string }[] {
+  const out: { rule: ProviderRule; secret: string }[] = [];
+  const seen = new Set<string>();
+  for (const rule of PROVIDER_RULES) {
+    rule.pattern.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = rule.pattern.exec(content))) {
+      const secret = m[0];
+      if (seen.has(secret)) continue;
+      seen.add(secret);
+      out.push({ rule, secret });
+    }
+  }
+  return out;
 }
 
 // Alchemy keys are opaque ~32-char strings — only trust them near a variable
@@ -363,6 +416,17 @@ async function scanFile(file: string, content: string, repoUrl: string): Promise
       masked: mask(key),
       severity: live ? "warning" : "info",
       detail: live ? "Key is live" : "Key is inactive or invalid",
+    });
+  }
+
+  for (const { rule, secret } of findProviderSecrets(content)) {
+    findings.push({
+      file,
+      kind: "provider_secret",
+      ruleId: rule.id,
+      masked: mask(secret),
+      severity: "info",
+      detail: `${rule.label} committed — not verified (rotate it)`,
     });
   }
 
