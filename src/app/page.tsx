@@ -49,20 +49,7 @@ export default function Page() {
       <Navbar />
       <main id="main-content" className="pt-16">
       {/* ── LIVE CONSOLE + VAULT ────────────────────────────────────────── */}
-      <section id="live" className="pt-20 pb-20">
-        <div className="section-container">
-          <div className="text-center mb-10">
-            <p className="eyebrow">Live</p>
-            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-black dark:text-white tracking-tight mb-3">
-              The agent, running right now
-            </h2>
-            <p className="text-ls-gray-500 dark:text-ls-gray-400 max-w-xl mx-auto">
-              Every registered repo, scanned continuously — funds flow privately into the shielded vault.{" "}
-              <a href="/console" className="link-arrow">Open the full console →</a>
-            </p>
-          </div>
-        </div>
-
+      <section id="live" className="pt-12 pb-20">
         <VaultBanner
           rescuedCount={rescuedCount}
           rescuedTotal={rescuedTotal}
@@ -72,6 +59,17 @@ export default function Page() {
 
         <div className="section-container mt-12">
           <LiveConsole embedded />
+
+          <div className="text-center mt-10">
+            <p className="eyebrow">Live</p>
+            <h2 className="font-display text-3xl lg:text-4xl font-semibold text-black dark:text-white tracking-tight mb-3">
+              The agent, running right now
+            </h2>
+            <p className="text-ls-gray-500 dark:text-ls-gray-400 max-w-xl mx-auto">
+              Every registered repo, scanned continuously — funds flow privately into the shielded vault.{" "}
+              <a href="/console" className="link-arrow">Open the full console →</a>
+            </p>
+          </div>
         </div>
       </section>
 

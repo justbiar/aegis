@@ -503,22 +503,6 @@ export function LiveConsole({ embedded = false }: { embedded?: boolean }) {
         </div>
       </div>
 
-      {/* EPOCH WALL */}
-      <div className="mt-3 border border-ls-gray-200 dark:border-ls-gray-800 rounded-2xl bg-white dark:bg-[#161616] px-4 py-3">
-        <div className="flex items-center justify-between mb-2">
-          <p className="font-bold tracking-wide text-black dark:text-white">EPOCH WALL · EVERY SCAN</p>
-          <span className="text-[10px] text-ls-gray-500">
-            <span className="text-ls-gray-400">■</span> clean <span className="text-amber-600 dark:text-amber-500">■</span> exposure <span className="text-emerald-600 dark:text-emerald-400">■</span> rescue
-          </span>
-        </div>
-        <div className="flex flex-wrap gap-[3px]">
-          {epochs.length === 0 && <p className="text-ls-gray-400 text-[11px]">no epochs recorded yet — the scanner writes one per run</p>}
-          {epochs.map((e) => {
-            const cls = e.rescued > 0 ? "bg-emerald-500" : e.exposures > 0 ? "bg-amber-500" : "bg-ls-gray-300 dark:bg-ls-gray-700";
-            return <div key={e.n} title={`Epoch #${e.n} · scanned ${e.scanned} · ${e.rescued} rescued · ${e.exposures} exposed`} className={`w-[11px] h-[11px] rounded-[2px] ${cls}`} />;
-          })}
-        </div>
-      </div>
     </div>
   );
 }
