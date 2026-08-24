@@ -57,6 +57,17 @@ export interface ScanResult {
   error?: string;
 }
 
+export interface ScanOptions {
+  // Detect and report only — never sweep funds, never write to the ledger.
+  //
+  // The registry scan runs with rescue enabled: those projects opted into
+  // being watched by registering for the sprint. Anything else must not,
+  // for two separate reasons. A visitor-supplied repo would otherwise let an
+  // anonymous request move real money, and a repo we merely discovered on
+  // GitHub belongs to someone who never asked us to touch their wallet.
+  detectOnly?: boolean;
+}
+
 function shannonEntropy(s: string): number {
   const freq: Record<string, number> = {};
   for (const c of s) freq[c] = (freq[c] ?? 0) + 1;
@@ -352,7 +363,12 @@ async function fetchRaw(path: string, file: string): Promise<string | null> {
   return null;
 }
 
-async function scanFile(file: string, content: string, repoUrl: string): Promise<ScanFinding[]> {
+async function scanFile(
+  file: string,
+  content: string,
+  repoUrl: string,
+  opts: ScanOptions = {}
+): Promise<ScanFinding[]> {
   const findings: ScanFinding[] = [];
   const pairedAddress = findPairedAddress(content);
 
@@ -365,7 +381,7 @@ async function scanFile(file: string, content: string, repoUrl: string): Promise
       let rescueTxHash: string | undefined;
       let rescueAmount: number | undefined;
 
-      const safeAddress = SAFE_WALLET[network];
+      const safeAddress = opts.detectOnly ? null : SAFE_WALLET[network];
       if (result.candidate && safeAddress) {
         const rescue = await rescueFunds(key, result.candidate, safeAddress, network);
         if (rescue.rescued) {
@@ -433,7 +449,7 @@ async function scanFile(file: string, content: string, repoUrl: string): Promise
   return findings;
 }
 
-export async function scanRepo(repoUrl: string): Promise<ScanResult> {
+export async function scanRepo(repoUrl: string, opts: ScanOptions = {}): Promise<ScanResult> {
   const path = repoPath(repoUrl);
   if (!path) {
     return { repoUrl, status: "error", findings: [], error: "Not a github.com repo URL" };
@@ -444,7 +460,7 @@ export async function scanRepo(repoUrl: string): Promise<ScanResult> {
     for (const file of SENSITIVE_FILES) {
       const content = await fetchRaw(path, file);
       if (!content) continue;
-      findings.push(...(await scanFile(file, content, repoUrl)));
+      findings.push(...(await scanFile(file, content, repoUrl, opts)));
     }
     const status = findings.length === 0
       ? "clean"
