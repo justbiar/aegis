@@ -30,11 +30,11 @@ export interface EpochRecord {
   flagged?: { repo: string; kind: "exposure" | "rescue" }[];
   // Which pipeline produced this epoch. "registry" is the opted-in sprint
   // registry, scanned with rescue enabled; "sweep" is the wider Starknet
-  // ecosystem, scanned detect-only. They cover different repo counts, so
-  // anything reading these numbers has to know which is which rather than
-  // averaging the two together. Absent on epochs recorded before the sweep
-  // existed — those are all registry runs.
-  source?: "registry" | "sweep";
+  // ecosystem and "prs" its open pull requests, both detect-only. They cover
+  // different repo counts, so anything reading these numbers has to know which
+  // is which rather than averaging the three together. Absent on epochs
+  // recorded before the sweep existed — those are all registry runs.
+  source?: "registry" | "sweep" | "prs";
 }
 
 export const epochsAvailable = Boolean(KV_URL && KV_TOKEN);

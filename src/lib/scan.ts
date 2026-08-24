@@ -449,6 +449,116 @@ async function scanFile(
   return findings;
 }
 
+// ── Pull requests ───────────────────────────────────────────────────────────
+//
+// A secret is public the moment it lands in an open PR, long before anyone
+// merges it — and PR branches get far less scrutiny than main. Scanning them
+// costs exactly one API call per repo: listing the PRs also hands back each
+// one's head repo and commit sha, and the files at that sha are then readable
+// from the raw CDN for free. Fetching the PR's changed-file list through the
+// API instead would cost an extra call per PR for no more information.
+//
+// Always detect-only, with no way to opt in to rescuing. A PR is a proposal
+// from a third party, usually from their own fork; sweeping funds on the
+// strength of one would mean acting on a stranger's branch against an account
+// that may not even be theirs.
+
+const PR_HEADERS = () => {
+  const h: Record<string, string> = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "aegis-scanner",
+  };
+  const token = process.env.GITHUB_TOKEN;
+  if (token) h.Authorization = `Bearer ${token}`;
+  return h;
+};
+
+export interface PullRequestFindings {
+  number: number;
+  title: string;
+  author: string;
+  headRepo: string;
+  headSha: string;
+  findings: ScanFinding[];
+}
+
+export interface PrScanResult {
+  repoUrl: string;
+  status: "clean" | "info" | "leak" | "error";
+  prsChecked: number;
+  pullRequests: PullRequestFindings[];
+  error?: string;
+  rateLimited?: boolean;
+}
+
+async function fetchRawAtRef(path: string, ref: string, file: string): Promise<string | null> {
+  try {
+    const res = await fetch(`https://raw.githubusercontent.com/${path}/${ref}/${file}`);
+    return res.ok ? await res.text() : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function scanRepoPullRequests(
+  repoUrl: string,
+  maxPrs = 10
+): Promise<PrScanResult> {
+  const path = repoPath(repoUrl);
+  if (!path) {
+    return { repoUrl, status: "error", prsChecked: 0, pullRequests: [], error: "Not a github.com repo URL" };
+  }
+
+  let prs: any[];
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${path}/pulls?state=open&per_page=${maxPrs}&sort=updated&direction=desc`,
+      { headers: PR_HEADERS() }
+    );
+    if (res.status === 403 || res.status === 429) {
+      return { repoUrl, status: "error", prsChecked: 0, pullRequests: [], error: "Rate limited", rateLimited: true };
+    }
+    // 404 covers private, deleted and renamed repos — nothing to scan, not an error worth surfacing.
+    if (res.status === 404) return { repoUrl, status: "clean", prsChecked: 0, pullRequests: [] };
+    if (!res.ok) {
+      return { repoUrl, status: "error", prsChecked: 0, pullRequests: [], error: `GitHub returned ${res.status}` };
+    }
+    prs = await res.json();
+    if (!Array.isArray(prs)) prs = [];
+  } catch (err: any) {
+    return { repoUrl, status: "error", prsChecked: 0, pullRequests: [], error: err?.message ?? "PR listing failed" };
+  }
+
+  const out: PullRequestFindings[] = [];
+  for (const pr of prs) {
+    const head = pr?.head ?? {};
+    const headRepo: string | undefined = head?.repo?.full_name;
+    const headSha: string | undefined = head?.sha;
+    if (!headRepo || !headSha) continue; // head repo deleted
+
+    const findings: ScanFinding[] = [];
+    for (const file of SENSITIVE_FILES) {
+      const content = await fetchRawAtRef(headRepo, headSha, file);
+      if (!content) continue;
+      findings.push(...(await scanFile(file, content, repoUrl, { detectOnly: true })));
+    }
+    if (findings.length > 0) {
+      out.push({
+        number: pr.number,
+        title: String(pr.title ?? "").slice(0, 120),
+        author: pr?.user?.login ?? "unknown",
+        headRepo,
+        headSha,
+        findings,
+      });
+    }
+  }
+
+  const all = out.flatMap((p) => p.findings);
+  const status = all.length === 0 ? "clean" : all.some((f) => f.severity === "warning") ? "leak" : "info";
+  return { repoUrl, status, prsChecked: prs.length, pullRequests: out };
+}
+
 export async function scanRepo(repoUrl: string, opts: ScanOptions = {}): Promise<ScanResult> {
   const path = repoPath(repoUrl);
   if (!path) {

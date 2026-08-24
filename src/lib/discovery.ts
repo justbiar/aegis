@@ -205,6 +205,26 @@ export async function discoverStarknetRepos(pages = 6): Promise<DiscoveryRun | n
   };
 }
 
+// PR scanning has its own cursor: it costs an API call per repo against the
+// 5000/hr core quota, so it moves through the set far more slowly than the
+// file sweep (which is free) and must not share its position.
+const PR_CURSOR_KEY = "aegis:repos:pr-cursor";
+
+export async function nextPrBatch(size: number): Promise<{ repos: string[]; offset: number; total: number }> {
+  const all = await kv(`smembers/${REPOS_KEY}`);
+  const repos: string[] = all?.result ?? [];
+  if (repos.length === 0) return { repos: [], offset: 0, total: 0 };
+
+  repos.sort();
+  const cur = await kv(`get/${PR_CURSOR_KEY}`);
+  const offset = Math.max(0, Number(cur?.result ?? 0)) % repos.length;
+  const batch = repos.slice(offset, offset + size);
+  if (batch.length < size && repos.length > size) batch.push(...repos.slice(0, size - batch.length));
+
+  await kv(`set/${PR_CURSOR_KEY}/${(offset + batch.length) % repos.length}`);
+  return { repos: batch, offset, total: repos.length };
+}
+
 export async function discoveredCount(): Promise<number> {
   const res = await kv(`scard/${REPOS_KEY}`);
   return Number(res?.result ?? 0);

@@ -40,7 +40,7 @@ interface Epoch {
   // Repos that actually produced a finding in that scan ("owner/name"). Absent
   // on epochs recorded before the scanner started reporting it.
   flagged?: { repo: string; kind: "exposure" | "rescue" }[];
-  source?: "registry" | "sweep";
+  source?: "registry" | "sweep" | "prs";
 }
 interface ScanState {
   index: number;
