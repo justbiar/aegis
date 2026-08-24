@@ -6,6 +6,7 @@ import { KeyRound, ExternalLink } from "lucide-react";
 import { Navbar } from "./components/Navbar";
 import { VaultHero } from "./components/VaultHero";
 import { RegistryTable } from "./components/RegistryTable";
+import { ScanYourRepo } from "./components/ScanYourRepo";
 import { VaultBanner } from "./components/VaultBanner";
 import { ClaimPanel } from "./components/ClaimPanel";
 import { LiveConsole } from "./components/LiveConsole";
@@ -148,6 +149,8 @@ export default function Page() {
           </div>
         </div>
       </section>
+
+      <ScanYourRepo />
 
       <ClaimPanel />
 
