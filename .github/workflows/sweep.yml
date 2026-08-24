@@ -21,16 +21,20 @@ jobs:
         env:
           DISCOVER: https://aegis-peach-six.vercel.app/api/discover
           SWEEP: https://aegis-peach-six.vercel.app/api/scan-sweep
-          # Repos per sweep run. Measured at ~92ms/repo, so this stays well
-          # inside the 120s function budget. Each repo costs up to 8 requests
-          # to the raw CDN, so the batch size is really a politeness setting.
-          BATCH: "300"
-          # Seconds between sweeps. At 300 repos / 5 min a full pass over ~5k
-          # discovered repos takes about an hour and a half, which is a
-          # reasonable rate for repos whose owners never asked to be watched.
-          SLEEP: "300"
-          # Discovery is cheap but rate limited (10 search calls/min without a
-          # token), so it only runs every Nth iteration.
+          # Repos per sweep run. Measured on the deployed function: 200 repos
+          # took 23.6s, i.e. ~118ms each, so this uses about a fifth of the
+          # 120s budget and leaves room for slow repos.
+          BATCH: "200"
+          # Seconds between sweeps. 24s of work every 10 minutes is a ~4% duty
+          # cycle, and walks the whole discovered set (~5k repos) in about four
+          # hours. Deliberately unhurried: these repos never asked to be
+          # watched, and nothing here is time-critical because the sweep only
+          # reports — the rescue path is the registry scan, which runs on its
+          # own much faster loop.
+          SLEEP: "600"
+          # Search is the one hard limit: 10 requests/min unauthenticated. Six
+          # pages every sixth iteration is one burst per hour, far under it.
+          # (Set GITHUB_TOKEN on the deployment to raise the ceiling to 30/min.)
           DISCOVER_EVERY: "6"
           RUN_FOR: "3000"
         run: |

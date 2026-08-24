@@ -81,13 +81,46 @@ function githubHeaders(): Record<string, string> {
   return h;
 }
 
-async function searchPage(q: string, page: number): Promise<string[]> {
+interface SearchPage {
+  urls: string[];
+  // Distinguishing these matters: a genuinely short page means the query is
+  // exhausted and the cursor should move on, whereas a throttled or failed
+  // request means we learned nothing and the cursor must stay put. Treating
+  // the second like the first silently skips whole queries — and the repos
+  // in them are then never discovered at all.
+  exhausted: boolean;
+  limited: boolean;
+  remaining: number | null;
+}
+
+async function searchPage(q: string, page: number): Promise<SearchPage> {
   const url = `https://api.github.com/search/repositories?q=${encodeURIComponent(q)}&per_page=${PER_PAGE}&page=${page}`;
-  const res = await fetch(url, { headers: githubHeaders() });
-  if (!res.ok) return [];
+  let res: Response;
+  try {
+    res = await fetch(url, { headers: githubHeaders() });
+  } catch {
+    return { urls: [], exhausted: false, limited: true, remaining: null };
+  }
+
+  const remainingHeader = res.headers.get("x-ratelimit-remaining");
+  const remaining = remainingHeader === null ? null : Number(remainingHeader);
+
+  // GitHub signals search throttling with 403/429 (and 422 once a query walks
+  // past the 1000-result cap, which is a real end-of-query).
+  if (res.status === 403 || res.status === 429) {
+    return { urls: [], exhausted: false, limited: true, remaining };
+  }
+  if (res.status === 422) {
+    return { urls: [], exhausted: true, limited: false, remaining };
+  }
+  if (!res.ok) {
+    return { urls: [], exhausted: false, limited: true, remaining };
+  }
+
   const data = await res.json();
   const items: any[] = data?.items ?? [];
-  return items.map((r) => r?.html_url).filter((u): u is string => typeof u === "string");
+  const urls = items.map((r) => r?.html_url).filter((u): u is string => typeof u === "string");
+  return { urls, exhausted: urls.length < PER_PAGE, limited: false, remaining };
 }
 
 export interface DiscoveryRun {
@@ -96,10 +129,16 @@ export interface DiscoveryRun {
   added: number;
   total: number;
   cursor: Cursor;
+  // True when the run stopped early because GitHub throttled us. The cursor is
+  // left where it was, so the next run resumes on the same page.
+  rateLimited: boolean;
+  remaining: number | null;
 }
 
-// Walks `pages` search pages from wherever the last run stopped, adding any
-// new repo URLs to the queue.
+// Walks up to `pages` search pages from wherever the last run stopped, adding
+// new repo URLs to the queue. Unauthenticated search allows 10 requests a
+// minute, so a run stays well under that and simply continues next time —
+// discovery is meant to be slow and steady, not exhaustive in one go.
 export async function discoverStarknetRepos(pages = 6): Promise<DiscoveryRun | null> {
   if (!discoveryAvailable) return null;
 
@@ -108,31 +147,54 @@ export async function discoverStarknetRepos(pages = 6): Promise<DiscoveryRun | n
   let found = 0;
   let added = 0;
   let walked = 0;
+  let rateLimited = false;
+  let remaining: number | null = null;
 
   for (let i = 0; i < pages; i++) {
-    const urls = await searchPage(QUERIES[query], page);
-    walked++;
-    found += urls.length;
+    const res = await searchPage(QUERIES[query], page);
+    remaining = res.remaining ?? remaining;
 
-    if (urls.length > 0) {
-      // SADD returns how many members were actually new.
-      const args = urls.map((u) => encodeURIComponent(u)).join("/");
-      const res = await kv(`sadd/${REPOS_KEY}/${args}`);
-      added += Number(res?.result ?? 0);
+    if (res.limited) {
+      // Stop without advancing: this page still needs to be read.
+      rateLimited = true;
+      break;
     }
 
-    // A short page means this query is exhausted; move to the next one.
-    if (urls.length < PER_PAGE || page >= MAX_PAGE) {
+    walked++;
+    found += res.urls.length;
+
+    if (res.urls.length > 0) {
+      // SADD returns how many members were actually new.
+      const args = res.urls.map((u) => encodeURIComponent(u)).join("/");
+      const added_ = await kv(`sadd/${REPOS_KEY}/${args}`);
+      added += Number(added_?.result ?? 0);
+    }
+
+    if (res.exhausted || page >= MAX_PAGE) {
       query = (query + 1) % QUERIES.length;
       page = 1;
     } else {
       page++;
     }
+
+    // Leave headroom against the search quota rather than sprinting into a 403.
+    if (remaining !== null && remaining <= 1) {
+      rateLimited = true;
+      break;
+    }
   }
 
   await writeCursor({ query, page });
   const count = await kv(`scard/${REPOS_KEY}`);
-  return { pagesWalked: walked, found, added, total: Number(count?.result ?? 0), cursor: { query, page } };
+  return {
+    pagesWalked: walked,
+    found,
+    added,
+    total: Number(count?.result ?? 0),
+    cursor: { query, page },
+    rateLimited,
+    remaining,
+  };
 }
 
 export async function discoveredCount(): Promise<number> {
