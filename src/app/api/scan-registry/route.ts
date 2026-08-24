@@ -60,7 +60,7 @@ export async function GET() {
     const entries = await fetchRegistry();
     const results = await scanAll(entries.map((e) => e.repo_url));
     // Record this scan as one epoch (best-effort — never block the response).
-    await recordEpoch({ ts: Date.now(), durationMs: Date.now() - startedAt, ...summarize(results) });
+    await recordEpoch({ ts: Date.now(), durationMs: Date.now() - startedAt, source: "registry", ...summarize(results) });
     return NextResponse.json({ results });
   } catch (err: any) {
     return NextResponse.json(

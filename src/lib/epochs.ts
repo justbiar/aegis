@@ -28,6 +28,13 @@ export interface EpochRecord {
   // simply have none. Not a disclosure beyond what the site already shows —
   // the Coverage table publishes per-repo scan status on the same page.
   flagged?: { repo: string; kind: "exposure" | "rescue" }[];
+  // Which pipeline produced this epoch. "registry" is the opted-in sprint
+  // registry, scanned with rescue enabled; "sweep" is the wider Starknet
+  // ecosystem, scanned detect-only. They cover different repo counts, so
+  // anything reading these numbers has to know which is which rather than
+  // averaging the two together. Absent on epochs recorded before the sweep
+  // existed — those are all registry runs.
+  source?: "registry" | "sweep";
 }
 
 export const epochsAvailable = Boolean(KV_URL && KV_TOKEN);

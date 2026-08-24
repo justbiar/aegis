@@ -40,6 +40,7 @@ interface Epoch {
   // Repos that actually produced a finding in that scan ("owner/name"). Absent
   // on epochs recorded before the scanner started reporting it.
   flagged?: { repo: string; kind: "exposure" | "rescue" }[];
+  source?: "registry" | "sweep";
 }
 interface ScanState {
   index: number;
@@ -263,7 +264,13 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
     const loadEpochs = () => fetch("/api/epochs?limit=160").then((r) => r.json()).then((d) => {
       const es: Epoch[] = d.epochs ?? [];
       setEpochs(es);
-      const latest = es[es.length - 1];
+      // The sweep pipeline scans a different (much larger) set of repos than
+      // the registry, so its counts can't be matched against the registry
+      // node list the terminal walks. Take the newest registry epoch for that,
+      // falling back to the newest of any kind for older records with no
+      // source tag.
+      const registryEpochs = es.filter((e) => (e.source ?? "registry") === "registry");
+      const latest = registryEpochs[registryEpochs.length - 1] ?? es[es.length - 1];
       latestEpochRef.current = latest ?? null;
       if (latest && latest.n !== lastEpochN.current) {
         if (lastEpochN.current !== -1 && latest.rescued > 0) { rescueTickRef.current++; setRescueTick(rescueTickRef.current); }
