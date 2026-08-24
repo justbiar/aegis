@@ -32,9 +32,14 @@ jobs:
           # reports — the rescue path is the registry scan, which runs on its
           # own much faster loop.
           SLEEP: "600"
-          # Search is the one hard limit: 10 requests/min unauthenticated. Six
-          # pages every sixth iteration is one burst per hour, far under it.
-          # (Set GITHUB_TOKEN on the deployment to raise the ceiling to 30/min.)
+          # Search is the one hard limit. GITHUB_TOKEN is set on the
+          # deployment, which raises it from 10 to 30 requests/min (confirmed
+          # from the x-ratelimit-remaining header), so a run can walk a full
+          # 10-page query without getting close to the ceiling.
+          DISCOVER_PAGES: "10"
+          # One discovery burst per hour. The queue only needs topping up with
+          # newly created repos once it has been built out, and a throttled run
+          # now resumes on the same page instead of skipping a query.
           DISCOVER_EVERY: "6"
           RUN_FOR: "3000"
         run: |
@@ -42,7 +47,7 @@ jobs:
           i=0
           while [ "$SECONDS" -lt "$end" ]; do
             if [ $((i % DISCOVER_EVERY)) -eq 0 ]; then
-              curl -sf --max-time 90 "$DISCOVER?pages=6" -o /dev/null \
+              curl -sf --max-time 90 "$DISCOVER?pages=$DISCOVER_PAGES" -o /dev/null \
                 && echo "discover ok $(date -u +%H:%M:%S)" \
                 || echo "discover fail $(date -u +%H:%M:%S)"
             fi
