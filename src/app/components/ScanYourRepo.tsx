@@ -191,8 +191,9 @@ function ResultView({ result }: { result: ScanResult }) {
       </ul>
 
       <p className="text-xs text-ls-gray-400 mt-4">
-        Detect-only: nothing was moved. Aegis sweeps funds for repos registered in the sprint
-        registry, never for a repo scanned from this box.
+        {exposed
+          ? "This scan moved nothing. The repo has been queued for the scheduled sweep, which is the only part of Aegis allowed to move funds — currently on testnet only. Rotate the key yourself either way: it is public now."
+          : "Detect-only — this scan never moves funds."}
       </p>
     </div>
   );

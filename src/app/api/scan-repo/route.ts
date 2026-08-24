@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { scanRepo } from "@/lib/scan";
+import { enqueueRepo } from "@/lib/discovery";
 
 export const maxDuration = 60;
 
@@ -65,7 +66,16 @@ export async function POST(req: Request) {
 
   try {
     const result = await scanRepo(repoUrl, { detectOnly: true });
-    return NextResponse.json({ result });
+
+    // A verified exposure found here still needs rescuing — it just must not
+    // be this endpoint that does it. Queueing the repo hands it to the
+    // scheduled sweep, which is the only path allowed to move funds, so the
+    // leak gets handled without an anonymous request ever being the trigger.
+    let queued = false;
+    if (result.status === "leak") {
+      queued = await enqueueRepo(repoUrl).catch(() => false);
+    }
+    return NextResponse.json({ result, queued });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "Scan failed" }, { status: 502 });
   }

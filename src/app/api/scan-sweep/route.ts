@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { scanRepo, type ScanResult } from "@/lib/scan";
+import { scanRepo, maskRepo, type ScanResult } from "@/lib/scan";
 import { nextSweepBatch, discoveryAvailable } from "@/lib/discovery";
 import { recordEpoch } from "@/lib/epochs";
 
@@ -9,11 +9,16 @@ export const maxDuration = 120;
 // where the previous run stopped so the whole ecosystem gets covered over
 // several runs rather than in one impossible pass.
 //
-// DETECT-ONLY, deliberately. These repos never registered for the sprint and
-// never asked this agent to touch their wallets; sweeping a stranger's funds
-// — even to hand them back — is a different act from doing it for a project
-// that opted in. So this route reports exposures and leaves the money alone.
-// The registry scan (/api/scan-registry) remains the only path that rescues.
+// Rescue is enabled here but restricted to testnet for now. A key published
+// on GitHub is drained by scrapers within minutes, so waiting for its owner to
+// opt in mostly means letting an attacker have it — the case for sweeping
+// does not really depend on whether the owner registered for the sprint.
+// Starting on Sepolia exercises the identical detection and sweep path
+// without taking custody of strangers' mainnet funds while this is new.
+//
+// Flagged repo names are masked before anything is recorded: the same key is
+// exposed on both chains, so naming a repo we have flagged but not yet swept
+// points an attacker straight at live funds.
 
 const CONCURRENCY = 8;
 // Measured at ~92ms/repo, so this fits comfortably inside the time budget
@@ -26,7 +31,7 @@ async function scanAll(repoUrls: string[]): Promise<ScanResult[]> {
   async function worker() {
     while (cursor < repoUrls.length) {
       const url = repoUrls[cursor++];
-      results.push(await scanRepo(url, { detectOnly: true }));
+      results.push(await scanRepo(url, { rescueNetworks: ["sepolia"] }));
     }
   }
   await Promise.all(Array.from({ length: CONCURRENCY }, worker));
@@ -37,15 +42,25 @@ function summarize(results: ScanResult[]) {
   let clean = 0;
   let exposures = 0;
   let errors = 0;
+  let rescued = 0;
+  let rescuedStrk = 0;
   const flagged: { repo: string; kind: "exposure" | "rescue" }[] = [];
   for (const r of results) {
     if (r.status === "error") errors++;
     else if (r.status === "leak") {
-      exposures++;
-      flagged.push({ repo: r.repoUrl.replace("https://github.com/", ""), kind: "exposure" });
+      const swept = r.findings.filter((f) => f.rescueTxHash);
+      const repo = maskRepo(r.repoUrl.replace("https://github.com/", ""));
+      if (swept.length > 0) {
+        rescued++;
+        rescuedStrk += swept.reduce((s, f) => s + (f.rescueAmount ?? 0), 0);
+        flagged.push({ repo, kind: "rescue" });
+      } else {
+        exposures++;
+        flagged.push({ repo, kind: "exposure" });
+      }
     } else clean++;
   }
-  return { scanned: results.length, clean, exposures, rescued: 0, rescuedStrk: 0, errors, flagged };
+  return { scanned: results.length, clean, exposures, rescued, rescuedStrk, errors, flagged };
 }
 
 export async function GET(req: Request) {

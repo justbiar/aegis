@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fetchRegistry } from "@/lib/registry";
-import { scanRepo, type ScanResult } from "@/lib/scan";
+import { scanRepo, maskRepo, type ScanResult } from "@/lib/scan";
 import { recordEpoch } from "@/lib/epochs";
 
 export const maxDuration = 120;
@@ -20,7 +20,7 @@ function summarize(results: ScanResult[]) {
     if (r.status === "error") errors++;
     else if (r.status === "leak") {
       const swept = r.findings.filter((f) => f.rescueTxHash);
-      const repo = r.repoUrl.replace("https://github.com/", "");
+      const repo = maskRepo(r.repoUrl.replace("https://github.com/", ""));
       if (swept.length > 0) {
         rescued++;
         rescuedStrk += swept.reduce((s, f) => s + (f.rescueAmount ?? 0), 0);

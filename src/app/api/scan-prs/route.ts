@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { scanRepoPullRequests } from "@/lib/scan";
+import { scanRepoPullRequests, maskRepo } from "@/lib/scan";
 import { fetchRegistry } from "@/lib/registry";
 import { nextPrBatch, discoveryAvailable } from "@/lib/discovery";
 import { recordEpoch } from "@/lib/epochs";
@@ -14,7 +14,8 @@ export const maxDuration = 120;
 // the ones a rescue can actually help; the rest of the slice rotates through
 // the discovered set on its own cursor.
 //
-// Detect-only throughout: scanRepoPullRequests has no rescue path at all.
+// Rescue is limited to testnet here, matching the ecosystem sweep, and every
+// flagged repo name is masked before it is stored or returned.
 
 const CONCURRENCY = 4;
 const DISCOVERED_PER_RUN = 60;
@@ -50,7 +51,7 @@ export async function GET(req: Request) {
       while (cursor < targets.length) {
         if (rateLimited) return; // stop spending calls once GitHub says no
         const url = targets[cursor++];
-        const r = await scanRepoPullRequests(url, MAX_PRS_PER_REPO);
+        const r = await scanRepoPullRequests(url, MAX_PRS_PER_REPO, { rescueNetworks: ["sepolia"] });
         if (r.rateLimited) rateLimited = true;
         results.push(r);
       }
@@ -66,7 +67,7 @@ export async function GET(req: Request) {
       if (r.status === "error") errors++;
       else if (r.status === "leak") {
         exposures++;
-        flagged.push({ repo: r.repoUrl.replace("https://github.com/", ""), kind: "exposure" });
+        flagged.push({ repo: maskRepo(r.repoUrl.replace("https://github.com/", "")), kind: "exposure" });
       }
     }
 
@@ -92,7 +93,14 @@ export async function GET(req: Request) {
       offset,
       total,
       durationMs: Date.now() - startedAt,
-      findings: results.filter((r) => r.status === "leak" || r.status === "info"),
+      // Masked for the same reason the epoch is: this response is public.
+      findings: results
+        .filter((r) => r.status === "leak" || r.status === "info")
+        .map((r) => ({
+          ...r,
+          repoUrl: maskRepo(r.repoUrl.replace("https://github.com/", "")),
+          pullRequests: r.pullRequests.map((p) => ({ ...p, headRepo: maskRepo(p.headRepo), author: maskRepo(p.author) })),
+        })),
     });
   } catch (err: any) {
     return NextResponse.json({ error: err?.message ?? "PR scan failed" }, { status: 502 });

@@ -225,6 +225,19 @@ export async function nextPrBatch(size: number): Promise<{ repos: string[]; offs
   return { repos: batch, offset, total: repos.length };
 }
 
+// Adds a single repo to the sweep queue.
+//
+// This is how the public scan box reaches a rescue without being able to
+// trigger one: an anonymous request can put a repo in the queue, but only the
+// scheduled sweep ever moves funds, and only on the networks it is allowed to
+// touch. So a visitor who finds a funded leak gets it handled, without the
+// endpoint itself becoming a way to make the server spend money on command.
+export async function enqueueRepo(repoUrl: string): Promise<boolean> {
+  if (!discoveryAvailable) return false;
+  const res = await kv(`sadd/${REPOS_KEY}/${encodeURIComponent(repoUrl)}`);
+  return Number(res?.result ?? 0) > 0;
+}
+
 export async function discoveredCount(): Promise<number> {
   const res = await kv(`scard/${REPOS_KEY}`);
   return Number(res?.result ?? 0);

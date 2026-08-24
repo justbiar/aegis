@@ -14,6 +14,7 @@
 // toggle live.
 
 import { useEffect, useRef, useState } from "react";
+import { maskRepo } from "@/lib/mask";
 
 interface RegistryEntry {
   repo_url: string;
@@ -315,7 +316,9 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
         const flaggedBy = new Map((ep?.flagged ?? []).map((f) => [f.repo, f.kind]));
         if (flaggedBy.size > 0) {
           for (const i of order) {
-            const kind = flaggedBy.get(repoLabel(entries[i]));
+            // Flagged names arrive already masked, so the entry is masked the
+            // same way to compare. Deterministic masking keeps the match exact.
+            const kind = flaggedBy.get(maskRepo(repoLabel(entries[i])));
             if (kind) status[i] = kind;
           }
         }
@@ -325,8 +328,11 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
         for (let i = 0; i < order.length; i++) {
           if (cancelled) return;
           scanRef.current.index = i;
-          const repo = repoLabel(entries[order[i]]);
           const st = status[order[i]];
+          // A repo is named while it is merely being covered, and censored the
+          // moment it is reported as exposed — the same key is live on mainnet,
+          // so naming it here would advertise where the funds are.
+          const repo = st ? maskRepo(repoLabel(entries[order[i]])) : repoLabel(entries[order[i]]);
           setProgress(Math.round(((i + 1) / order.length) * 100));
           if (st || i % 4 === 0 || i === order.length - 1) {
             const tag =
