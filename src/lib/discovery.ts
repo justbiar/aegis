@@ -24,6 +24,14 @@ const QUERIES = [
   "starknet stars:10..49",
   "starknet stars:3..9",
   "starknet stars:1..2",
+  // Unstarred repos are the bulk of the ecosystem (~3.3k of ~5.2k) and are
+  // exactly where an accidental commit is most likely — nobody is reviewing a
+  // weekend project. One query can't reach them because GitHub caps any
+  // search at 1000 results, so they are sliced by last-push date instead.
+  "starknet stars:0 pushed:>=2026-01-01",
+  "starknet stars:0 pushed:2025-01-01..2025-12-31",
+  "starknet stars:0 pushed:2024-01-01..2024-12-31",
+  "starknet stars:0 pushed:<2024-01-01",
   "topic:starknet",
   "topic:cairo-lang",
   "starknet.js in:name,description,readme",
