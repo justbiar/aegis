@@ -1,0 +1,52 @@
+name: Sweep Starknet ecosystem
+
+on:
+  schedule:
+    # Heartbeat only — the loop below is what sets the real cadence. See the
+    # registry workflow for why a schedule alone is not enough.
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+# Independent of the registry loop so a slow sweep can never delay a rescue.
+concurrency:
+  group: sweep-loop
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Discover repos and sweep them in slices
+        env:
+          DISCOVER: https://aegis-peach-six.vercel.app/api/discover
+          SWEEP: https://aegis-peach-six.vercel.app/api/scan-sweep
+          # Repos per sweep run. Measured at ~92ms/repo, so this stays well
+          # inside the 120s function budget. Each repo costs up to 8 requests
+          # to the raw CDN, so the batch size is really a politeness setting.
+          BATCH: "300"
+          # Seconds between sweeps. At 300 repos / 5 min a full pass over ~5k
+          # discovered repos takes about an hour and a half, which is a
+          # reasonable rate for repos whose owners never asked to be watched.
+          SLEEP: "300"
+          # Discovery is cheap but rate limited (10 search calls/min without a
+          # token), so it only runs every Nth iteration.
+          DISCOVER_EVERY: "6"
+          RUN_FOR: "3000"
+        run: |
+          end=$((SECONDS + RUN_FOR))
+          i=0
+          while [ "$SECONDS" -lt "$end" ]; do
+            if [ $((i % DISCOVER_EVERY)) -eq 0 ]; then
+              curl -sf --max-time 90 "$DISCOVER?pages=6" -o /dev/null \
+                && echo "discover ok $(date -u +%H:%M:%S)" \
+                || echo "discover fail $(date -u +%H:%M:%S)"
+            fi
+            if curl -sf --max-time 150 "$SWEEP?batch=$BATCH" -o /dev/null; then
+              echo "sweep ok   $(date -u +%H:%M:%S)"
+            else
+              echo "sweep fail $(date -u +%H:%M:%S)"
+            fi
+            i=$((i + 1))
+            sleep "$SLEEP"
+          done
