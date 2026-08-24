@@ -41,6 +41,13 @@ jobs:
           # newly created repos once it has been built out, and a throttled run
           # now resumes on the same page instead of skipping a query.
           DISCOVER_EVERY: "6"
+          # PR scanning is the only part that spends the core API quota: one
+          # call per repo, ~200 repos per run (the whole registry plus a
+          # rotating slice). Every third iteration is roughly twice an hour,
+          # so ~400 calls/hr against a 5000/hr ceiling.
+          PRS: https://aegis-peach-six.vercel.app/api/scan-prs
+          PR_BATCH: "60"
+          PR_EVERY: "3"
           RUN_FOR: "3000"
         run: |
           end=$((SECONDS + RUN_FOR))
