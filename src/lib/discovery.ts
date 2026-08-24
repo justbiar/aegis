@@ -238,6 +238,19 @@ export async function enqueueRepo(repoUrl: string): Promise<boolean> {
   return Number(res?.result ?? 0) > 0;
 }
 
+// A stable slice of the watch list, for the console's node graph. Sorted so
+// the sample doesn't reshuffle on every poll and make the graph jump.
+export async function sampleDiscovered(size: number): Promise<string[]> {
+  const all = await kv(`smembers/${REPOS_KEY}`);
+  const repos: string[] = all?.result ?? [];
+  repos.sort();
+  if (repos.length <= size) return repos;
+  // Spread the sample across the whole set rather than taking the first N,
+  // so the graph represents the breadth of what is watched.
+  const step = repos.length / size;
+  return Array.from({ length: size }, (_, i) => repos[Math.floor(i * step)]);
+}
+
 export async function discoveredCount(): Promise<number> {
   const res = await kv(`scard/${REPOS_KEY}`);
   return Number(res?.result ?? 0);

@@ -13,7 +13,7 @@
 // (embedded). The canvas reads the current theme every frame so it follows the
 // toggle live.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { maskRepo } from "@/lib/mask";
 
 interface RegistryEntry {
@@ -244,6 +244,17 @@ const ago = (ts: number) => {
 
 export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: boolean; vaultBanner?: React.ReactNode }) {
   const [entries, setEntries] = useState<RegistryEntry[]>([]);
+  // Total repos under watch (registry + discovered), and a sample of the
+  // discovered set used to fill out the node graph.
+  const [watched, setWatched] = useState(0);
+  const [sample, setSample] = useState<RegistryEntry[]>([]);
+  // Registry first so a flagged registry repo still lines up with its node,
+  // then the discovered sample — the graph and sweep then show the real
+  // breadth of what is watched instead of only the sprint's 140 projects.
+  const nodes = useMemo(() => {
+    const seen = new Set(entries.map((e) => e.repo_url));
+    return [...entries, ...sample.filter((s) => !seen.has(s.repo_url))];
+  }, [entries, sample]);
   const [mainnet, setMainnet] = useState<NetInfo | null>(null);
   const [sepolia, setSepolia] = useState<NetInfo | null>(null);
   const [epochs, setEpochs] = useState<Epoch[]>([]);
@@ -260,7 +271,24 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
   const epochScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const loadRegistry = () => fetch("/api/registry").then((r) => r.json()).then((d) => setEntries(d.entries ?? [])).catch(() => {});
+    // Coverage is what the agent actually watches: the sprint registry plus
+    // every Starknet repo discovery has found. The registry is kept separate
+    // because it is the only set the rescue pipeline sweeps, and the graph
+    // draws from both so the node field reflects real breadth rather than
+    // just the 140 hackathon projects.
+    const loadRegistry = () =>
+      fetch("/api/registry")
+        .then((r) => r.json())
+        .then((d) => setEntries(d.entries ?? []))
+        .catch(() => {});
+    const loadCoverage = () =>
+      fetch("/api/coverage")
+        .then((r) => r.json())
+        .then((d) => {
+          setWatched(Number(d.watched) || 0);
+          setSample((d.sample ?? []).map((repo_url: string) => ({ repo_url })));
+        })
+        .catch(() => {});
     const loadVault = () => fetch("/api/vault").then((r) => r.json()).then((d) => { setMainnet(d.mainnet ?? null); setSepolia(d.sepolia ?? null); }).catch(() => {});
     const loadEpochs = () => fetch("/api/epochs?limit=160").then((r) => r.json()).then((d) => {
       const es: Epoch[] = d.epochs ?? [];
@@ -279,12 +307,14 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
       }
     }).catch(() => {});
     loadRegistry();
+    loadCoverage();
     loadVault();
     loadEpochs();
     const reg = setInterval(loadRegistry, 60000);
+    const cov = setInterval(loadCoverage, 60000);
     const v = setInterval(loadVault, 20000);
     const e = setInterval(loadEpochs, 8000);
-    return () => { clearInterval(reg); clearInterval(v); clearInterval(e); };
+    return () => { clearInterval(reg); clearInterval(cov); clearInterval(v); clearInterval(e); };
   }, []);
 
   useEffect(() => {
@@ -299,11 +329,11 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
   }, [epochs]);
 
   useEffect(() => {
-    if (entries.length === 0) return;
+    if (nodes.length === 0) return;
     let cancelled = false;
     const run = async () => {
       while (!cancelled) {
-        const order = entries.map((_, i) => i);
+        const order = nodes.map((_, i) => i);
         const ep = latestEpochRef.current;
         // Per-repo verdicts come from the last real server-side scan, matched
         // by repo name. Never guessed: an earlier version spread the real
@@ -318,7 +348,7 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
           for (const i of order) {
             // Flagged names arrive already masked, so the entry is masked the
             // same way to compare. Deterministic masking keeps the match exact.
-            const kind = flaggedBy.get(maskRepo(repoLabel(entries[i])));
+            const kind = flaggedBy.get(maskRepo(repoLabel(nodes[i])));
             if (kind) status[i] = kind;
           }
         }
@@ -332,7 +362,7 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
           // A repo is named while it is merely being covered, and censored the
           // moment it is reported as exposed — the same key is live on mainnet,
           // so naming it here would advertise where the funds are.
-          const repo = st ? maskRepo(repoLabel(entries[order[i]])) : repoLabel(entries[order[i]]);
+          const repo = st ? maskRepo(repoLabel(nodes[order[i]])) : repoLabel(nodes[order[i]]);
           setProgress(Math.round(((i + 1) / order.length) * 100));
           if (st || i % 4 === 0 || i === order.length - 1) {
             const tag =
@@ -360,7 +390,11 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
     };
     run();
     return () => { cancelled = true; };
-  }, [entries]);
+    // Depends on nodes, not entries: the discovered sample arrives after the
+    // registry does, and keying this to entries alone would leave the sweep
+    // looping over a stale closure that still only knows the 140 registry
+    // repos.
+  }, [nodes]);
 
   const latest = epochs[epochs.length - 1];
   const rescuedCount = (mainnet?.rescuedCount ?? 0) + (sepolia?.rescuedCount ?? 0);
@@ -393,7 +427,7 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
           </a>
         )}
         <div className="flex items-center gap-5">
-          <Stat label="Repos" value={String(entries.length || "—")} />
+          <Stat label="Repos" value={watched ? watched.toLocaleString("en-US") : String(nodes.length || "—")} />
           <Stat label="Accounts" value={loaded ? String(rescuedCount) : "—"} />
           <span className="inline-flex items-center gap-1.5 text-[10px] text-ls-gray-500 tracking-wider">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" /> LIVE
@@ -466,7 +500,7 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
             <span className={scanning ? "text-emerald-600 dark:text-emerald-400" : "text-ls-gray-500"}>{scanning ? "SCANNING" : "IDLE"}</span>
           </div>
           <div className="absolute inset-0">
-            <GraphCanvas entries={entries} scanRef={scanRef} rescueTick={rescueTick} />
+            <GraphCanvas entries={nodes} scanRef={scanRef} rescueTick={rescueTick} />
           </div>
           <p className="absolute bottom-2 left-3 z-10 text-ls-gray-400 text-[10px]">transfers are private — amounts and destinations are masked (shielded note-to-note)</p>
         </div>
