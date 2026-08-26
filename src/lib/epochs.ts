@@ -34,7 +34,9 @@ export interface EpochRecord {
   // different repo counts, so anything reading these numbers has to know which
   // is which rather than averaging the three together. Absent on epochs
   // recorded before the sweep existed — those are all registry runs.
-  source?: "registry" | "sweep" | "prs";
+  // "hot" is the fast lane over repos already known to be leaking; it only
+  // records an epoch when it actually sweeps something.
+  source?: "registry" | "sweep" | "prs" | "hot";
 }
 
 export const epochsAvailable = Boolean(KV_URL && KV_TOKEN);

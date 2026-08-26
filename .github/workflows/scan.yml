@@ -22,10 +22,19 @@ jobs:
       - name: Continuously trigger the registry scan
         env:
           URL: https://aegis-peach-six.vercel.app/api/scan-registry
-          # Seconds between scans. Lower = more frequent rescues, but more load
-          # on Alchemy (RPC compute units) and Vercel (function execution) —
+          # The fast lane: re-checks only the repos already known to be leaking.
+          # A full pass reads ~1200 files to answer "is anyone leaking?"; this
+          # answers "is the known leak funded yet?" in a handful of reads, so it
+          # can run every few seconds without moving the quota needle.
+          HOT: https://aegis-peach-six.vercel.app/api/scan-hot
+          # Seconds between full scans. Lower = new leaks found sooner, but more
+          # load on Alchemy (RPC compute units) and Vercel (function execution) —
           # those quotas, not GitHub, are the real limit. Tune here.
           SLEEP: "90"
+          # Seconds between hot checks, and how many fit inside one SLEEP.
+          # 6 x 15s = the 90s above; keep them consistent when tuning.
+          HOT_SLEEP: "15"
+          HOT_PER_CYCLE: "6"
           # Loop for ~50 min, then the queued scheduled run takes over.
           RUN_FOR: "3000"
         run: |
@@ -36,5 +45,14 @@ jobs:
             else
               echo "scan fail $(date -u +%H:%M:%S)"
             fi
-            sleep "$SLEEP"
+            # Fill the gap until the next full scan with fast-lane checks rather
+            # than sleeping through it. This is what closes the window between
+            # someone funding a leaked wallet and the sweep.
+            h=0
+            while [ "$h" -lt "$HOT_PER_CYCLE" ] && [ "$SECONDS" -lt "$end" ]; do
+              sleep "$HOT_SLEEP"
+              curl -sf --max-time 25 "$HOT" -o /dev/null \
+                || echo "hot fail  $(date -u +%H:%M:%S)"
+              h=$((h + 1))
+            done
           done

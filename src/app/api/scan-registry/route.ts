@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { fetchRegistry } from "@/lib/registry";
 import { scanRepo, maskRepo, type ScanResult } from "@/lib/scan";
 import { recordEpoch } from "@/lib/epochs";
+import { syncHotlist } from "@/lib/hotlist";
 
 export const maxDuration = 120;
 
@@ -59,6 +60,9 @@ export async function GET() {
     const startedAt = Date.now();
     const entries = await fetchRegistry();
     const results = await scanAll(entries.map((e) => e.repo_url));
+    // Hand anything still leaking to the fast lane, which re-checks it every
+    // few seconds instead of once a minute.
+    await syncHotlist(results, "full");
     // Record this scan as one epoch (best-effort — never block the response).
     await recordEpoch({ ts: Date.now(), durationMs: Date.now() - startedAt, source: "registry", ...summarize(results) });
     return NextResponse.json({ results });

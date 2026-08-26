@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { scanRepo, maskRepo, type ScanResult } from "@/lib/scan";
 import { nextSweepBatch, discoveryAvailable } from "@/lib/discovery";
 import { recordEpoch } from "@/lib/epochs";
+import { syncHotlist } from "@/lib/hotlist";
 
 export const maxDuration = 120;
 
@@ -75,6 +76,8 @@ export async function GET(req: Request) {
       return NextResponse.json({ scanned: 0, total, note: "Nothing discovered yet — run /api/discover first" });
     }
     const results = await scanAll(repos);
+    // Swept-up repos keep their testnet-only rescue scope in the fast lane.
+    await syncHotlist(results, "testnet");
     const summary = summarize(results);
     await recordEpoch({ ts: Date.now(), durationMs: Date.now() - startedAt, source: "sweep", ...summary });
     return NextResponse.json({ ...summary, offset, total, durationMs: Date.now() - startedAt });
