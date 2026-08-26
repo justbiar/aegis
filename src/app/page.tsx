@@ -187,14 +187,24 @@ export default function Page() {
             <p className="text-ls-gray-500 text-xs">
               MIT License · Built for the STRK20 Private Sprint
             </p>
-            <a
-              href="https://github.com/justbiar/aegis"
-              target="_blank"
-              rel="noreferrer"
-              className="text-ls-gray-500 text-sm hover:text-black dark:hover:text-white transition-colors flex items-center gap-1.5"
-            >
-              <ExternalLink size={14} /> Repo
-            </a>
+            <div className="flex items-center gap-5">
+              <a
+                href="https://github.com/justbiar/aegis/blob/main/docs/FINDINGS.md"
+                target="_blank"
+                rel="noreferrer"
+                className="text-ls-gray-500 text-sm hover:text-black dark:hover:text-white transition-colors flex items-center gap-1.5"
+              >
+                <ExternalLink size={14} /> Field notes
+              </a>
+              <a
+                href="https://github.com/justbiar/aegis"
+                target="_blank"
+                rel="noreferrer"
+                className="text-ls-gray-500 text-sm hover:text-black dark:hover:text-white transition-colors flex items-center gap-1.5"
+              >
+                <ExternalLink size={14} /> Repo
+              </a>
+            </div>
           </div>
         </div>
       </footer>
