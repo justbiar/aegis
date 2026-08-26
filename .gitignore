@@ -52,9 +52,10 @@ A1priv/A1priv.ts
 /ArfheWallet.zip
 /ArfheWallet/
 
-# local notes, never published — README.md is the one exception (already
-# tracked; `git add README.md` still works despite this wildcard)
+# local notes, never published — README.md and anything under docs/ are the
+# exceptions, those are written to be read by other people
 *.md
+!docs/*.md
 .claude/
 
 # local-only debug panel (Shield/Send/Unshield/Echo/Balances/Pay) — never

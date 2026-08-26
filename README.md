@@ -104,6 +104,18 @@ reaches the claimant without a real wallet-signed transfer.
 - ✅ Payout through the real STRK20 shielded pool (mainnet, `strk20.json`), not a plain transfer — safe wallet registers, shields, and pays a claim out as a private note-to-note transfer (no amount, no parties on-chain); a claim sits pending until it's paid this way, deliberately batched with others rather than instant, since an isolated deposit-then-withdraw pair is the one thing actually correlatable in this scheme
 - 🚧 Fully automatic private payout — right now the shield/private-transfer step needs a connected wallet (no mainnet proving service is publicly available yet for a headless signer; see [issue #124](https://github.com/starkience/strk20-hackathon/issues/124)), so it's a deliberate manual step rather than instant
 
+## Field notes
+
+Integrating with the STRK20 pool turned up a number of things that aren't
+documented anywhere — the fee is charged per `apply_actions` call rather than
+per transfer, registration status is readable straight off the chain, a
+headless signer can't shield at all, and a private key doesn't determine an
+address on Starknet.
+
+**[→ docs/FINDINGS.md](docs/FINDINGS.md)** writes all of it up, with the
+mainnet call or transaction that verifies each one. If you're building on the
+pool, start there — it's the afternoon we already lost.
+
 ## Stack
 
 - **Next.js 16** (App Router) + **React 19** + **TypeScript**
