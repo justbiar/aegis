@@ -122,11 +122,22 @@ export async function POST(req: NextRequest) {
     (c) => c.repoUrl === repoUrl && c.network === network && c.status === "pending",
   );
   if (pending) {
-    const updated = await updatePendingClaim(repoUrl, network, login, { starknetAddress, tipPercent });
+    // Re-price it against the ledger as it stands now. Between filing and
+    // paying, the same repo can be rescued again — that happens routinely,
+    // since the key is still public and the account can be refunded minutes
+    // later. Everything not already covered by a settled claim belongs to this
+    // pending one; leaving the amount frozen at filing time is what stranded
+    // the difference as permanently "claimable".
+    const settled = claims
+      .filter((c) => c.repoUrl === repoUrl && c.network === network && c.status !== "pending")
+      .reduce((sum, c) => sum + c.amount, 0);
+    const amount = ledgerTotal - settled;
+
+    const updated = await updatePendingClaim(repoUrl, network, login, { starknetAddress, tipPercent, amount });
     if (!updated) {
       return NextResponse.json({ error: "Could not update the pending claim" }, { status: 500 });
     }
-    return NextResponse.json({ claim: { ...pending, starknetAddress, tipPercent } });
+    return NextResponse.json({ claim: { ...pending, starknetAddress, tipPercent, amount } });
   }
 
   // No pending claim — a new one covers whatever's been rescued beyond what

@@ -99,7 +99,12 @@ export async function updatePendingClaim(
   repoUrl: string,
   network: Network,
   githubLogin: string,
-  updates: { starknetAddress: string; tipPercent: number },
+  // `amount` is optional but should normally be passed: a repo can be rescued
+  // again while its claim is still pending, and a claim whose amount is frozen
+  // at whatever was outstanding when it was filed leaves the difference
+  // permanently unclaimable — it shows as claimable, but filing again lands
+  // here and only ever edited the address before.
+  updates: { starknetAddress: string; tipPercent: number; amount?: number },
 ): Promise<boolean> {
   const claims = await getClaims();
   const claim = claims.find(
@@ -112,6 +117,7 @@ export async function updatePendingClaim(
   if (!claim) return false;
   claim.starknetAddress = updates.starknetAddress;
   claim.tipPercent = updates.tipPercent;
+  if (typeof updates.amount === "number" && updates.amount > 0) claim.amount = updates.amount;
   await saveClaims(claims);
   return true;
 }
