@@ -63,6 +63,11 @@ jobs:
             else
               echo "sweep fail $(date -u +%H:%M:%S)"
             fi
+            if [ $((i % PR_EVERY)) -eq 0 ]; then
+              curl -sf --max-time 150 "$PRS?batch=$PR_BATCH" -o /dev/null \
+                && echo "prs ok     $(date -u +%H:%M:%S)" \
+                || echo "prs fail   $(date -u +%H:%M:%S)"
+            fi
             i=$((i + 1))
             sleep "$SLEEP"
           done
