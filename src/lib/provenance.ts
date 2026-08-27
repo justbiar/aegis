@@ -139,16 +139,43 @@ async function kvGet(key: string): Promise<string | null> {
   }
 }
 
+// The value goes in the body rather than the path: an assembled provenance
+// answer is kilobytes of JSON, well past what belongs in a URL.
 async function kvSet(key: string, value: string, ttlSeconds?: number): Promise<void> {
   if (!KV_URL || !KV_TOKEN) return;
   const suffix = ttlSeconds ? `?EX=${ttlSeconds}` : "";
   try {
-    await fetch(`${KV_URL}/set/${encodeURIComponent(key)}/${encodeURIComponent(value)}${suffix}`, {
+    await fetch(`${KV_URL}/set/${encodeURIComponent(key)}${suffix}`, {
+      method: "POST",
       headers: { Authorization: `Bearer ${KV_TOKEN}` },
+      body: value,
     });
   } catch {
     // a cache that fails to write is just a slower next call
   }
+}
+
+// One round trip for every cached transaction instead of one per record — the
+// vault endpoint is polled every 20s, and a read per ledger line adds up to
+// tens of thousands of KV requests a day for answers that never change.
+async function kvGetMany(keys: string[]): Promise<Map<string, string>> {
+  const found = new Map<string, string>();
+  if (!KV_URL || !KV_TOKEN || keys.length === 0) return found;
+  try {
+    const res = await fetch(`${KV_URL}/pipeline`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${KV_TOKEN}`, "Content-Type": "application/json" },
+      body: JSON.stringify(keys.map((k) => ["get", k])),
+    });
+    const data = await res.json();
+    if (!Array.isArray(data)) return found;
+    data.forEach((entry: { result?: unknown }, i: number) => {
+      if (typeof entry?.result === "string") found.set(keys[i], entry.result);
+    });
+  } catch {
+    // no cache is just a slower rebuild
+  }
+  return found;
 }
 
 interface Receipt {
@@ -184,12 +211,20 @@ async function readChain(network: Network, txHash: string): Promise<ChainFacts |
   return { found: true, succeeded: true, blockNumber, intoVault, from };
 }
 
-async function chainFacts(network: Network, txHash: string): Promise<ChainFacts | null> {
-  const cacheKey = `aegis:txfacts:${network}:${txHash}`;
-  const cached = await kvGet(cacheKey);
-  if (cached) {
+function factsKey(network: Network, txHash: string): string {
+  return `aegis:txfacts:${network}:${txHash}`;
+}
+
+async function chainFacts(
+  network: Network,
+  txHash: string,
+  cached: Map<string, string>,
+): Promise<ChainFacts | null> {
+  const key = factsKey(network, txHash);
+  const hit = cached.get(key);
+  if (hit) {
     try {
-      return JSON.parse(cached) as ChainFacts;
+      return JSON.parse(hit) as ChainFacts;
     } catch {
       // corrupt cache entry — fall through and re-read the chain
     }
@@ -199,14 +234,14 @@ async function chainFacts(network: Network, txHash: string): Promise<ChainFacts 
   if (!facts) return null;
   // A mined transaction is settled for good; a miss might just be a tx that
   // hasn't been indexed yet, so don't let that stick.
-  await kvSet(cacheKey, JSON.stringify(facts), facts.found ? undefined : 300);
+  await kvSet(key, JSON.stringify(facts), facts.found ? undefined : 300);
   return facts;
 }
 
 // A ledger line is proven when a real, successful transaction moved exactly
 // that much STRK into the vault — and, for rescues that recorded which account
 // they swept, when the transaction's sender is that same account.
-async function verifyRecord(record: RescueRecord): Promise<RescueProof> {
+async function verifyRecord(record: RescueRecord, cached: Map<string, string>): Promise<RescueProof> {
   const base = {
     txHash: record.txHash,
     repoUrl: record.repoUrl,
@@ -218,7 +253,7 @@ async function verifyRecord(record: RescueRecord): Promise<RescueProof> {
     observedAmount: null as number | null,
   };
 
-  const facts = await chainFacts(record.network, record.txHash);
+  const facts = await chainFacts(record.network, record.txHash, cached);
   if (!facts) return { ...base, verified: false, reason: "no safe wallet configured for this network" };
   if (!facts.found) return { ...base, verified: false, reason: "transaction not found on chain" };
 
@@ -274,9 +309,13 @@ async function refundsByAccount(network: Network, fromBlock: number): Promise<Ma
   return totals;
 }
 
-async function buildNetwork(network: Network, ledger: RescueRecord[]): Promise<NetworkProvenance> {
+async function buildNetwork(
+  network: Network,
+  ledger: RescueRecord[],
+  cached: Map<string, string>,
+): Promise<NetworkProvenance> {
   const records = ledger.filter((r) => r.network === network);
-  const proofs = await Promise.all(records.map(verifyRecord));
+  const proofs = await Promise.all(records.map((r) => verifyRecord(r, cached)));
 
   const blocks = proofs.filter((p) => p.verified && p.blockNumber !== null).map((p) => p.blockNumber as number);
   const refunds = blocks.length > 0
@@ -330,21 +369,39 @@ async function buildNetwork(network: Network, ledger: RescueRecord[]): Promise<N
 }
 
 // Proving the whole ledger costs one receipt call per record plus one event
-// scan per network. Individual proofs are cached in KV, but the assembled
-// answer is also held briefly in-process so a page that hits /api/vault and
-// /api/claims together doesn't do the work twice.
-let memo: { at: number; value: Record<Network, NetworkProvenance> } | null = null;
+// scan per network, so the assembled answer is cached rather than the pieces:
+// in-process first, then in KV so a cold instance — and every other instance —
+// skips the work too. A rescue that lands mid-window shows up on the next
+// rebuild, which is soon enough for a claim that is paid out by hand.
+const CACHE_KEY = "aegis:provenance";
+const CACHE_TTL_S = 120;
 const MEMO_TTL_MS = 60_000;
+
+let memo: { at: number; value: Record<Network, NetworkProvenance> } | null = null;
 
 export async function getProvenance(): Promise<Record<Network, NetworkProvenance>> {
   if (memo && Date.now() - memo.at < MEMO_TTL_MS) return memo.value;
+
+  const shared = await kvGet(CACHE_KEY);
+  if (shared) {
+    try {
+      const value = JSON.parse(shared) as Record<Network, NetworkProvenance>;
+      memo = { at: Date.now(), value };
+      return value;
+    } catch {
+      // corrupt cache entry — rebuild it
+    }
+  }
+
   const ledger = await getLedger();
+  const cached = await kvGetMany(ledger.map((r) => factsKey(r.network, r.txHash)));
   const [mainnet, sepolia] = await Promise.all([
-    buildNetwork("mainnet", ledger),
-    buildNetwork("sepolia", ledger),
+    buildNetwork("mainnet", ledger, cached),
+    buildNetwork("sepolia", ledger, cached),
   ]);
   const value = { mainnet, sepolia };
   memo = { at: Date.now(), value };
+  await kvSet(CACHE_KEY, JSON.stringify(value), CACHE_TTL_S);
   return value;
 }
 
