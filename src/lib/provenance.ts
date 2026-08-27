@@ -36,21 +36,32 @@ const AMOUNT_TOLERANCE = 1e-9;
 // before it. Sepolia runs ~50k blocks/day, so this is a few days of slack.
 const REFUND_LOOKBACK_MARGIN = 200_000;
 
-// Chain facts about one rescue tx, cached under its hash: a mined tx never
-// changes its mind.
-interface ChainProof {
-  verified: boolean;
-  accountAddress: string | null;
+// What the chain says about one rescue tx, cached under its hash. Only facts
+// live here, never a verdict: a mined tx never changes its mind, but whether
+// it backs a given ledger line depends on that line, and two lines can point
+// at the same hash.
+interface ChainFacts {
+  found: boolean;
+  succeeded: boolean;
   blockNumber: number | null;
-  observedAmount: number | null;
-  reason?: string;
+  /** STRK this tx moved into the safe wallet. */
+  intoVault: number;
+  /** Sender of that transfer — the leaked account the funds came out of. */
+  from: string | null;
 }
 
-export interface RescueProof extends ChainProof {
+export interface RescueProof {
   txHash: string;
   repoUrl: string;
   network: Network;
   amount: number;
+  verified: boolean;
+  accountAddress: string | null;
+  blockNumber: number | null;
+  observedAmount: number | null;
+  /** File in the repo the key was found in, when the rescue recorded one. */
+  sourceFile?: string;
+  reason?: string;
 }
 
 export interface RepoProvenance {
@@ -146,55 +157,83 @@ interface Receipt {
   events?: { from_address: string; keys: string[]; data: string[] }[];
 }
 
-// Proves one rescue: the tx exists, succeeded, and moved this much STRK into
-// the safe wallet. The sender of that transfer is the leaked account, which is
-// how a rescue gets tied back to the key found in the repo.
-async function proveOnChain(record: RescueRecord): Promise<ChainProof> {
-  const safe = SAFE_WALLET[record.network];
-  if (!safe) return { verified: false, accountAddress: null, blockNumber: null, observedAmount: null, reason: "no safe wallet configured for this network" };
+// Reads one rescue transaction: did it happen, did it succeed, how much STRK
+// did it put in the vault, and who sent it. The sender is the leaked account,
+// which is how a rescue ties back to the key found in the repo.
+async function readChain(network: Network, txHash: string): Promise<ChainFacts | null> {
+  const safe = SAFE_WALLET[network];
+  if (!safe) return null;
 
-  const receipt = await rpc<Receipt>(record.network, "starknet_getTransactionReceipt", [record.txHash]);
-  if (!receipt) return { verified: false, accountAddress: null, blockNumber: null, observedAmount: null, reason: "transaction not found on chain" };
+  const receipt = await rpc<Receipt>(network, "starknet_getTransactionReceipt", [txHash]);
+  if (!receipt) return { found: false, succeeded: false, blockNumber: null, intoVault: 0, from: null };
+
+  const blockNumber = receipt.block_number ?? null;
   if (receipt.execution_status !== "SUCCEEDED") {
-    return { verified: false, accountAddress: null, blockNumber: receipt.block_number ?? null, observedAmount: null, reason: `transaction did not succeed (${receipt.execution_status ?? "unknown status"})` };
+    return { found: true, succeeded: false, blockNumber, intoVault: 0, from: null };
   }
 
-  let observed = 0;
+  let intoVault = 0;
   let from: string | null = null;
   for (const event of receipt.events ?? []) {
     if (!sameAddress(event.from_address, STRK_TOKEN)) continue;
     if (!sameAddress(event.keys[0], TRANSFER_KEY)) continue;
     if (!sameAddress(event.keys[2], safe)) continue;
-    observed += u256ToStrk(event.data[0], event.data[1]);
+    intoVault += u256ToStrk(event.data[0], event.data[1]);
     from = from ?? event.keys[1];
   }
-
-  if (observed <= 0) {
-    return { verified: false, accountAddress: null, blockNumber: receipt.block_number ?? null, observedAmount: 0, reason: "no STRK transfer into the vault in this transaction" };
-  }
-  if (Math.abs(observed - record.amount) > AMOUNT_TOLERANCE) {
-    return { verified: false, accountAddress: from, blockNumber: receipt.block_number ?? null, observedAmount: observed, reason: `ledger says ${record.amount} STRK, chain says ${observed}` };
-  }
-  return { verified: true, accountAddress: from, blockNumber: receipt.block_number ?? null, observedAmount: observed };
+  return { found: true, succeeded: true, blockNumber, intoVault, from };
 }
 
-async function verifyRecord(record: RescueRecord): Promise<RescueProof> {
-  const cacheKey = `aegis:proof:${record.network}:${record.txHash}`;
+async function chainFacts(network: Network, txHash: string): Promise<ChainFacts | null> {
+  const cacheKey = `aegis:txfacts:${network}:${txHash}`;
   const cached = await kvGet(cacheKey);
   if (cached) {
     try {
-      const proof = JSON.parse(cached) as ChainProof;
-      return { ...proof, txHash: record.txHash, repoUrl: record.repoUrl, network: record.network, amount: record.amount };
+      return JSON.parse(cached) as ChainFacts;
     } catch {
-      // corrupt cache entry — fall through and re-prove
+      // corrupt cache entry — fall through and re-read the chain
     }
   }
 
-  const proof = await proveOnChain(record);
-  // A proof stands forever; a failure might just be a tx that hasn't been
-  // indexed yet, so don't let a transient miss stick.
-  await kvSet(cacheKey, JSON.stringify(proof), proof.verified ? undefined : 300);
-  return { ...proof, txHash: record.txHash, repoUrl: record.repoUrl, network: record.network, amount: record.amount };
+  const facts = await readChain(network, txHash);
+  if (!facts) return null;
+  // A mined transaction is settled for good; a miss might just be a tx that
+  // hasn't been indexed yet, so don't let that stick.
+  await kvSet(cacheKey, JSON.stringify(facts), facts.found ? undefined : 300);
+  return facts;
+}
+
+// A ledger line is proven when a real, successful transaction moved exactly
+// that much STRK into the vault — and, for rescues that recorded which account
+// they swept, when the transaction's sender is that same account.
+async function verifyRecord(record: RescueRecord): Promise<RescueProof> {
+  const base = {
+    txHash: record.txHash,
+    repoUrl: record.repoUrl,
+    network: record.network,
+    amount: record.amount,
+    sourceFile: record.sourceFile,
+    accountAddress: record.accountAddress ?? null,
+    blockNumber: null as number | null,
+    observedAmount: null as number | null,
+  };
+
+  const facts = await chainFacts(record.network, record.txHash);
+  if (!facts) return { ...base, verified: false, reason: "no safe wallet configured for this network" };
+  if (!facts.found) return { ...base, verified: false, reason: "transaction not found on chain" };
+
+  const seen = { ...base, blockNumber: facts.blockNumber, accountAddress: facts.from ?? base.accountAddress, observedAmount: facts.intoVault };
+  if (!facts.succeeded) return { ...seen, verified: false, reason: "transaction did not succeed" };
+  if (facts.intoVault <= 0) {
+    return { ...seen, verified: false, reason: "no STRK transfer into the vault in this transaction" };
+  }
+  if (Math.abs(facts.intoVault - record.amount) > AMOUNT_TOLERANCE) {
+    return { ...seen, verified: false, reason: `ledger says ${record.amount} STRK, chain says ${facts.intoVault}` };
+  }
+  if (record.accountAddress && !sameAddress(record.accountAddress, facts.from)) {
+    return { ...seen, verified: false, reason: "transaction was not sent by the account this rescue recorded" };
+  }
+  return { ...seen, verified: true };
 }
 
 // Every STRK the safe wallet has sent out since it started rescuing, grouped by

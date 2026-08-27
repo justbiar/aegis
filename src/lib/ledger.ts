@@ -22,6 +22,13 @@ export interface RescueRecord {
   repoUrl: string;
   network: Network;
   timestamp: number;
+  // Where the money came from, written down at rescue time so a claim can be
+  // traced back to a specific leak rather than taken on trust: the account the
+  // key derived to, and the file in the repo the key was sitting in. Optional —
+  // records written before this existed have neither, and their account is
+  // recovered from the rescue transaction instead (see provenance.ts).
+  accountAddress?: string;
+  sourceFile?: string;
 }
 
 export const ledgerAvailable = Boolean(KV_URL && KV_TOKEN);

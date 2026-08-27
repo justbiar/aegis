@@ -402,7 +402,15 @@ async function scanFile(
           rescueTxHash = rescue.transferTxHash;
           rescueAmount = rescue.amountStrk;
           if (rescueTxHash && rescueAmount) {
-            await recordRescue({ amount: rescueAmount, txHash: rescueTxHash, repoUrl, network, timestamp: Date.now() });
+            await recordRescue({
+              amount: rescueAmount,
+              txHash: rescueTxHash,
+              repoUrl,
+              network,
+              timestamp: Date.now(),
+              accountAddress: result.candidate.address,
+              sourceFile: file,
+            });
           }
         } else {
           detail = `${result.detail} — rescue failed: ${rescue.error}`;
