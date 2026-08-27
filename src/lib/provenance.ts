@@ -285,23 +285,23 @@ async function verifyRecord(record: RescueRecord, cached: Map<string, string>): 
   return { ...seen, verified: true };
 }
 
-// Every STRK the safe wallet has sent out since it started rescuing, grouped by
-// recipient. Only outflows landing on a rescued account count as refunds — the
-// rest (shielding into the privacy pool, paying a claim) are the vault doing
-// its job, not money going back around the loop.
-async function refundsByAccount(
+// Every STRK the safe wallet has sent out since it started rescuing, with the
+// block each transfer landed in. Only outflows to a rescued account matter
+// here; the rest — shielding into the privacy pool, paying a claim — are the
+// vault doing its job, not money going back around the loop.
+async function outgoingTransfers(
   network: Network,
   fromBlock: number,
-): Promise<{ totals: Map<string, number>; complete: boolean }> {
+): Promise<{ transfers: { to: string; amount: number; block: number }[]; complete: boolean }> {
   const safe = SAFE_WALLET[network];
-  const totals = new Map<string, number>();
-  if (!safe) return { totals, complete: false };
+  const transfers: { to: string; amount: number; block: number }[] = [];
+  if (!safe) return { transfers, complete: false };
   let complete = true;
 
   let continuationToken: string | undefined;
   let pages = 0;
   do {
-    const outcome = await rpc<{ events: { keys: string[]; data: string[] }[]; continuation_token?: string }>(
+    const outcome = await rpc<{ events: { keys: string[]; data: string[]; block_number?: number }[]; continuation_token?: string }>(
       network,
       "starknet_getEvents",
       [
@@ -321,8 +321,11 @@ async function refundsByAccount(
     }
     const result = outcome.result;
     for (const event of result.events) {
-      const to = addressKey(event.keys[2]);
-      totals.set(to, (totals.get(to) ?? 0) + u256ToStrk(event.data[0], event.data[1]));
+      transfers.push({
+        to: addressKey(event.keys[2]),
+        amount: u256ToStrk(event.data[0], event.data[1]),
+        block: event.block_number ?? Number.MAX_SAFE_INTEGER,
+      });
     }
     continuationToken = result.continuation_token;
     pages++;
@@ -331,7 +334,7 @@ async function refundsByAccount(
   // Stopping early leaves refunds unaccounted for, which would overstate what
   // is claimable — the one direction that must never be guessed at.
   if (continuationToken) complete = false;
-  return { totals, complete };
+  return { transfers, complete };
 }
 
 async function buildNetwork(
@@ -344,9 +347,27 @@ async function buildNetwork(
 
   const blocks = proofs.filter((p) => p.verified && p.blockNumber !== null).map((p) => p.blockNumber as number);
   const scan = blocks.length > 0
-    ? await refundsByAccount(network, Math.min(...blocks) - REFUND_LOOKBACK_MARGIN)
-    : { totals: new Map<string, number>(), complete: true };
-  const refunds = scan.totals;
+    ? await outgoingTransfers(network, Math.min(...blocks) - REFUND_LOOKBACK_MARGIN)
+    : { transfers: [], complete: true };
+
+  // The last block on which each account was swept. Money the vault sent an
+  // account after that is still sitting there — it hasn't been rescued a second
+  // time, so it hasn't been counted a second time and there's nothing to
+  // subtract yet. This is also what keeps a payout to an owner who reuses the
+  // compromised wallet from being mistaken for a refund.
+  const lastSweep = new Map<string, number>();
+  for (const proof of proofs) {
+    if (!proof.verified || !proof.accountAddress || proof.blockNumber === null) continue;
+    const key = addressKey(proof.accountAddress);
+    lastSweep.set(key, Math.max(lastSweep.get(key) ?? 0, proof.blockNumber));
+  }
+
+  const refunds = new Map<string, number>();
+  for (const transfer of scan.transfers) {
+    const swept = lastSweep.get(transfer.to);
+    if (swept === undefined || transfer.block > swept) continue;
+    refunds.set(transfer.to, (refunds.get(transfer.to) ?? 0) + transfer.amount);
+  }
   // Anything unread — a receipt we couldn't fetch, a refund scan that stopped
   // short — means the picture is incomplete, so nothing here is offered up as
   // claimable until it can be read properly. It self-heals on the next request,
