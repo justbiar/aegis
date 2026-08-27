@@ -163,6 +163,91 @@ function TipSlider({ value, onChange, amount }: { value: number; onChange: (v: n
   );
 }
 
+// A payout can land on-chain and still fail to be written down — the wallet
+// sends the transfer, then the call that records it is rejected or never
+// arrives, and the claim sits pending while the STRK is already gone. Paying
+// again would be the expensive way to fix that, so the operator can settle the
+// record against the hash that already paid it. Bookkeeping only: the endpoint
+// still requires the operator's session and still checks the transaction
+// touched the pool.
+function RecordPayment({
+  repoUrl,
+  network,
+  net,
+  onRecorded,
+}: {
+  repoUrl: string;
+  network: NetworkKey;
+  net: number;
+  onRecorded: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [txHash, setTxHash] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/claims/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repoUrl, network, txHash: txHash.trim(), net }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(body?.error ?? `HTTP ${res.status}`);
+        return;
+      }
+      setOpen(false);
+      onRecorded();
+    } catch (err: any) {
+      setError(err?.message ?? "Request failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="mt-3 text-[11px] text-ls-gray-500 dark:text-ls-gray-400 hover:text-black dark:hover:text-white transition-colors"
+      >
+        Already paid this one? Record the transaction →
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-3 pt-3 border-t border-ls-gray-100 dark:border-ls-gray-800 space-y-2">
+      <p className="text-[11px] text-ls-gray-500 dark:text-ls-gray-400">
+        Paste the pool transaction that paid it. This only settles the record — no funds move.
+      </p>
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          value={txHash}
+          onChange={(e) => setTxHash(e.target.value)}
+          placeholder="0x…"
+          spellCheck={false}
+          className="flex-1 min-w-0 rounded-lg border border-ls-gray-300 dark:border-ls-gray-700 bg-transparent px-3 py-1.5 text-xs font-mono text-black dark:text-white"
+          aria-label="Transaction hash that paid this claim"
+        />
+        <div className="flex items-center gap-2">
+          <button onClick={submit} disabled={busy || txHash.trim().length < 4} className="btn-primary text-xs px-4 py-1.5 disabled:opacity-50">
+            {busy ? <Loader2 size={12} className="animate-spin" /> : "Record"}
+          </button>
+          <button onClick={() => setOpen(false)} className="btn-ghost text-xs px-3 py-1.5">
+            Cancel
+          </button>
+        </div>
+      </div>
+      {error && <p className="text-[11px] text-red-600 dark:text-red-400">{error}</p>}
+    </div>
+  );
+}
+
 // Network segmented toggle, shared by both modes.
 function NetworkToggle({
   selected,
@@ -426,6 +511,7 @@ export function ClaimPanel() {
                         <p className="font-mono text-black dark:text-white truncate">{shortAddr(c.starknetAddress)}</p>
                       </div>
                     </div>
+                    <RecordPayment repoUrl={c.repoUrl} network={c.network} net={r.net} onRecorded={loadPending} />
                     {!r.payable && (
                       <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-2">
                         Too small to cover its fee share right now — left pending.

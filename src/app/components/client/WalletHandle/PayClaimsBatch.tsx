@@ -50,6 +50,10 @@ type Status =
   | { kind: "sending" }
   | { kind: "confirming" }
   | { kind: "ok"; txHash: string }
+  // The transfer landed but Aegis failed to write it down. Money moved; the
+  // claim still reads as pending. The operator has to see this, and has to
+  // keep the hash — it's the only way to settle the record afterwards.
+  | { kind: "unrecorded"; txHash: string; failures: { repoUrl: string; message: string }[] }
   | { kind: "error"; message: string };
 
 // Pays every payable pending claim on one network in a SINGLE private
@@ -141,27 +145,44 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
         return;
       }
     } catch (error: any) {
-      setStatus({ kind: "error", message: error?.message ?? "Could not confirm the transaction." });
+      // The transaction is already out — losing its hash here would strand the
+      // claim as pending with nothing to settle it against.
+      setStatus({
+        kind: "error",
+        message: `${error?.message ?? "Could not confirm the transaction."} — it may still have landed: ${txH}`,
+      });
       return;
     }
 
-    setStatus({ kind: "ok", txHash: txH });
     // One tx settles every payable claim — mark them all paid against the hash.
-    await Promise.allSettled(
-      payable.map((r) =>
-        fetch("/api/claims/pay", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            repoUrl: r.claim.repoUrl,
-            network: r.claim.network,
-            txHash: txH,
-            payerAddress: connectedAddress,
-            net: r.net,
-          }),
-        })
-      )
+    // Every response is checked: this used to report success no matter what the
+    // endpoint said, so a rejected write left the claim pending while the UI
+    // said it was paid and the STRK was already gone.
+    const results = await Promise.all(
+      payable.map(async (r) => {
+        try {
+          const res = await fetch("/api/claims/pay", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              repoUrl: r.claim.repoUrl,
+              network: r.claim.network,
+              txHash: txH,
+              payerAddress: connectedAddress,
+              net: r.net,
+            }),
+          });
+          if (res.ok) return null;
+          const body = await res.json().catch(() => ({}));
+          return { repoUrl: r.claim.repoUrl, message: body?.error ?? `HTTP ${res.status}` };
+        } catch (error: any) {
+          return { repoUrl: r.claim.repoUrl, message: error?.message ?? "request failed" };
+        }
+      })
     );
+
+    const failures = results.filter((r): r is { repoUrl: string; message: string } => r !== null);
+    setStatus(failures.length > 0 ? { kind: "unrecorded", txHash: txH, failures } : { kind: "ok", txHash: txH });
     onPaid();
   };
 
@@ -170,6 +191,28 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
       <a href={explorerTxUrl(status.txHash)} target="_blank" rel="noreferrer" className="tag-clean inline-flex items-center gap-1">
         Paid {payable.length} privately ↗
       </a>
+    );
+  }
+
+  if (status.kind === "unrecorded") {
+    return (
+      <div className="text-xs space-y-1.5">
+        <p className="text-amber-600 dark:text-amber-400 font-semibold">
+          Paid on-chain, but {status.failures.length} {status.failures.length === 1 ? "claim" : "claims"} could not be
+          marked paid — they still show as pending.
+        </p>
+        {status.failures.map((f) => (
+          <p key={f.repoUrl} className="text-ls-gray-500 dark:text-ls-gray-400">
+            {f.repoUrl.replace("https://github.com/", "")}: {f.message}
+          </p>
+        ))}
+        <p className="text-ls-gray-500 dark:text-ls-gray-400">
+          Record it against this hash below — don&apos;t pay again:{" "}
+          <a href={explorerTxUrl(status.txHash)} target="_blank" rel="noreferrer" className="link-arrow font-mono">
+            {status.txHash.slice(0, 12)}…{status.txHash.slice(-4)}
+          </a>
+        </p>
+      </div>
     );
   }
 
