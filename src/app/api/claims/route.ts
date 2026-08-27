@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
-import { getLedger } from "@/lib/ledger";
 import { getClaims, recordClaimRequest, updatePendingClaim, type ClaimRecord } from "@/lib/claims";
+import { getProvenance, type NetworkProvenance, type RescueProof } from "@/lib/provenance";
+import { rpcBalanceOf } from "@/lib/scan";
+import { NETWORKS, SAFE_WALLET, STRK_TOKEN, type Network } from "@/lib/networks";
 
 const DEFAULT_TIP_PERCENT = 2;
 // Only this GitHub login (the safe-wallet operator) may read the full pending
@@ -14,7 +16,6 @@ function clampTipPercent(raw: unknown): number {
   if (!Number.isFinite(n)) return DEFAULT_TIP_PERCENT;
   return Math.min(100, Math.max(0, n));
 }
-import type { Network } from "@/lib/networks";
 
 function repoOwner(repoUrl: string): string | null {
   try {
@@ -26,9 +27,102 @@ function repoOwner(repoUrl: string): string | null {
   }
 }
 
+// What's left to claim on one repo, and the evidence behind it. `amount` is
+// what the owner can actually ask for; the rest of the fields exist so the UI
+// can show why it isn't simply "everything the ledger says".
+interface ClaimableRow {
+  repoUrl: string;
+  network: Network;
+  amount: number;
+  /** Rescued STRK proven against the chain (tx exists, succeeded, landed here). */
+  verified: number;
+  /** Ledger entries that could not be proven — excluded from `amount`. */
+  unverified: number;
+  /** STRK the vault sent back to this repo's leaked accounts — excluded too. */
+  refunded: number;
+  /** True when the vault simply doesn't hold enough to back the full amount. */
+  cappedByBalance: boolean;
+  proofs: { txHash: string; amount: number; accountAddress: string | null; verified: boolean }[];
+}
+
+async function vaultBalance(network: Network): Promise<number | null> {
+  const safe = SAFE_WALLET[network];
+  if (!safe) return null;
+  try {
+    return Number(await rpcBalanceOf(STRK_TOKEN, safe, network)) / 1e18;
+  } catch {
+    return null;
+  }
+}
+
+// Claimable per repo = what the chain proves this repo's leak put into the
+// vault, minus what's already been claimed against it. Then the whole network
+// is held under what the vault actually holds: promising more than the safe
+// wallet can pay is how a claim ends up permanently pending.
+async function claimableRows(
+  claims: ClaimRecord[],
+  provenance: Record<Network, NetworkProvenance>,
+): Promise<ClaimableRow[]> {
+  const claimed = new Map<string, number>();
+  for (const c of claims) {
+    const key = `${c.repoUrl}::${c.network}`;
+    claimed.set(key, (claimed.get(key) ?? 0) + c.amount);
+  }
+
+  const rows: ClaimableRow[] = [];
+  for (const network of NETWORKS) {
+    for (const repo of provenance[network].repos) {
+      const remaining = repo.attributable - (claimed.get(`${repo.repoUrl}::${network}`) ?? 0);
+      if (remaining <= 1e-4) continue;
+      rows.push({
+        repoUrl: repo.repoUrl,
+        network,
+        amount: remaining,
+        verified: repo.verified,
+        unverified: repo.unverified,
+        refunded: repo.refunded,
+        cappedByBalance: false,
+        proofs: repo.proofs.map((p: RescueProof) => ({
+          txHash: p.txHash,
+          amount: p.amount,
+          accountAddress: p.accountAddress,
+          verified: p.verified,
+        })),
+      });
+    }
+  }
+
+  for (const network of NETWORKS) {
+    const here = rows.filter((r) => r.network === network);
+    if (here.length === 0) continue;
+    const balance = await vaultBalance(network);
+    if (balance === null) continue;
+
+    // Pending claims are already spoken for out of the same balance.
+    const promised = claims
+      .filter((c) => c.network === network && c.status === "pending")
+      .reduce((sum, c) => sum + c.amount, 0);
+    const available = Math.max(0, balance - promised);
+    const wanted = here.reduce((sum, r) => sum + r.amount, 0);
+    if (wanted <= available) continue;
+
+    // Nobody's claim gets cancelled outright — everyone's shrinks by the same
+    // proportion, so the shortfall is shared rather than decided by who asked
+    // first.
+    const scale = available / wanted;
+    for (const row of here) {
+      row.amount *= scale;
+      row.cappedByBalance = true;
+    }
+  }
+
+  return rows.filter((r) => r.amount > 1e-4);
+}
+
 // GET ?scope=mine (default) — the signed-in user's own claimable rescues
-// (ledger total for repos they own, minus anything already claimed) plus
-// their existing claim records.
+// (what the chain proves was rescued out of repos they own, minus anything
+// already claimed and minus anything the vault sent back) plus their existing
+// claim records.
 // GET ?scope=pending — every pending claim, for the operator payout panel.
 // Admin-only: it maps claimant logins to payout addresses, which a private
 // payout keeps off-chain, so it must not be world-readable.
@@ -48,33 +142,14 @@ export async function GET(req: NextRequest) {
 
   if (!login) return NextResponse.json({ claimable: [], claims: [] });
 
-  const ledger = await getLedger();
+  const provenance = await getProvenance();
   const myClaims = claims.filter((c) => c.githubLogin.toLowerCase() === login.toLowerCase());
 
-  const rescuedByRepoNetwork = new Map<string, number>();
-  for (const r of ledger) {
-    if (repoOwner(r.repoUrl) !== login.toLowerCase()) continue;
-    const key = `${r.repoUrl}::${r.network}`;
-    rescuedByRepoNetwork.set(key, (rescuedByRepoNetwork.get(key) ?? 0) + r.amount);
-  }
-
-  // How much of each repo/network's rescued total is already spoken for by a
-  // claim (pending or paid). Claimable is what's LEFT — so if a repo leaks and
-  // is rescued again after an earlier claim was already paid, the new amount
-  // shows up as newly claimable instead of vanishing.
-  const claimedByRepoNetwork = new Map<string, number>();
-  for (const c of myClaims) {
-    const key = `${c.repoUrl}::${c.network}`;
-    claimedByRepoNetwork.set(key, (claimedByRepoNetwork.get(key) ?? 0) + c.amount);
-  }
-
-  const claimable = Array.from(rescuedByRepoNetwork.entries())
-    .map(([key, total]) => {
-      const [repoUrl, network] = key.split("::") as [string, Network];
-      const remaining = total - (claimedByRepoNetwork.get(key) ?? 0);
-      return { repoUrl, network, amount: remaining };
-    })
-    .filter((c) => c.amount > 1e-4);
+  // Rows are computed for every repo and then filtered to this owner: the
+  // balance cap is a network-wide question, so it can't be answered from one
+  // owner's slice of the ledger.
+  const rows = await claimableRows(claims, provenance);
+  const claimable = rows.filter((r) => repoOwner(r.repoUrl) === login.toLowerCase());
 
   return NextResponse.json({ claimable, claims: myClaims });
 }
@@ -106,33 +181,38 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "You don't own this repo (owner segment doesn't match your GitHub login)" }, { status: 403 });
   }
 
-  const ledger = await getLedger();
-  const ledgerTotal = ledger
-    .filter((r) => r.repoUrl === repoUrl && r.network === network)
-    .reduce((sum, r) => sum + r.amount, 0);
-  if (ledgerTotal <= 0) {
-    return NextResponse.json({ error: "No rescue on record for this repo/network" }, { status: 404 });
+  const claims = await getClaims();
+  const provenance = await getProvenance();
+
+  const repo = provenance[network]?.repos.find((r) => r.repoUrl === repoUrl);
+  if (!repo || repo.verified <= 0) {
+    return NextResponse.json({ error: "No verified rescue on record for this repo/network" }, { status: 404 });
   }
 
-  const claims = await getClaims();
-
   // If there's already a pending claim for this repo/network, this is an edit
-  // (fix the address or tip) — not a new one.
+  // (fix the address or tip) — not a new one. Either way the amount is priced
+  // fresh: between filing and paying, the same repo can be rescued again (the
+  // key is still public, so the account gets refunded and swept again), and
+  // funds can also stop being claimable if the proof behind them doesn't hold
+  // up. Pricing the pending claim out of the claim list it belongs to would
+  // count it against itself, so it's excluded while its own amount is worked
+  // out.
   const pending = claims.find(
     (c) => c.repoUrl === repoUrl && c.network === network && c.status === "pending",
   );
-  if (pending) {
-    // Re-price it against the ledger as it stands now. Between filing and
-    // paying, the same repo can be rescued again — that happens routinely,
-    // since the key is still public and the account can be refunded minutes
-    // later. Everything not already covered by a settled claim belongs to this
-    // pending one; leaving the amount frozen at filing time is what stranded
-    // the difference as permanently "claimable".
-    const settled = claims
-      .filter((c) => c.repoUrl === repoUrl && c.network === network && c.status !== "pending")
-      .reduce((sum, c) => sum + c.amount, 0);
-    const amount = ledgerTotal - settled;
+  const others = pending ? claims.filter((c) => c !== pending) : claims;
+  const row = (await claimableRows(others, provenance)).find(
+    (r) => r.repoUrl === repoUrl && r.network === network,
+  );
+  const amount = row?.amount ?? 0;
+  if (amount <= 1e-4) {
+    return NextResponse.json(
+      { error: "Nothing left to claim — the rescued amount proven for this repo is already claimed or paid" },
+      { status: 409 },
+    );
+  }
 
+  if (pending) {
     const updated = await updatePendingClaim(repoUrl, network, login, { starknetAddress, tipPercent, amount });
     if (!updated) {
       return NextResponse.json({ error: "Could not update the pending claim" }, { status: 500 });
@@ -140,25 +220,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ claim: { ...pending, starknetAddress, tipPercent, amount } });
   }
 
-  // No pending claim — a new one covers whatever's been rescued beyond what
-  // earlier (paid) claims already accounted for. Lets the same repo be claimed
-  // again after a fresh rescue.
-  const claimedTotal = claims
-    .filter((c) => c.repoUrl === repoUrl && c.network === network)
-    .reduce((sum, c) => sum + c.amount, 0);
-  const remaining = ledgerTotal - claimedTotal;
-  if (remaining <= 1e-4) {
-    return NextResponse.json(
-      { error: "Nothing left to claim — the rescued amount for this repo is already claimed or paid" },
-      { status: 409 },
-    );
-  }
-
   const claim: ClaimRecord = {
     repoUrl,
     githubLogin: login,
     starknetAddress,
-    amount: remaining,
+    amount,
     network,
     status: "pending",
     requestedAt: Date.now(),

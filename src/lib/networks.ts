@@ -3,6 +3,10 @@
 // circular scan.ts <-> rescue.ts dependency.
 export type Network = "mainnet" | "sepolia";
 
+// Every network Aegis works on, for the places that have to walk all of
+// them rather than look one up.
+export const NETWORKS: Network[] = ["mainnet", "sepolia"];
+
 export const RPC_URL: Record<Network, string | null> = {
   mainnet: process.env.NEXT_PUBLIC_PROVIDER_URL
     ? `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/${process.env.NEXT_PUBLIC_PROVIDER_URL}`
