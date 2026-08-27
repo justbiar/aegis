@@ -33,6 +33,11 @@ interface NetworkVaultInfo {
   balance: number | null;
   rescuedTotal: number;
   rescuedCount: number;
+  unverifiedTotal: number;
+  unverifiedCount: number;
+  refundedTotal: number;
+  attributableTotal: number;
+  unattributedBalance: number | null;
   requestedTotal: number;
   requestedCount: number;
 }
@@ -57,6 +62,11 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
   const totalCount = (info?.rescuedCount ?? 0) + liveCount;
   const requestedTotal = info?.requestedTotal ?? 0;
   const requestedCount = info?.requestedCount ?? 0;
+  // Part of the balance that no rescue accounts for — it was sent here by
+  // someone, not swept out of a leak, so it belongs to nobody's claim.
+  const unattributed = info?.unattributedBalance ?? null;
+  const unverifiedCount = info?.unverifiedCount ?? 0;
+  const refundedTotal = info?.refundedTotal ?? 0;
 
   const animatedBalance = useCountUp(balance ?? 0);
   const animatedRescued = useCountUp(totalRescued);
@@ -116,13 +126,22 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
               </>
             )}
           </p>
+          {balance !== null && unattributed !== null && (
+            <p className="text-xs font-medium text-ls-gray-500 dark:text-ls-gray-400 mt-0.5">
+              {unattributed > 0.01 ? (
+                <>{unattributed.toFixed(2)} unattributed</>
+              ) : (
+                <>all traceable</>
+              )}
+            </p>
+          )}
         </div>
 
         <div className="hidden sm:block w-px h-9 bg-ls-gray-200 dark:bg-ls-gray-800" />
 
         <div className="text-left sm:text-right">
           <p className={`${labelSize} font-semibold uppercase tracking-widest text-ls-gray-500 dark:text-ls-gray-400 mb-0.5`}>
-            Total rescued
+            Rescued · proven
           </p>
           <p className={`hero-stat ${statSize} text-black dark:text-white leading-none`}>
             {ledgerAvailable || totalCount > 0 ? (
@@ -135,8 +154,16 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
             )}
           </p>
           {(ledgerAvailable || totalCount > 0) && (
-            <p className="text-xs font-medium text-ls-gray-500 dark:text-ls-gray-400 mt-0.5">
-              {totalCount} {totalCount === 1 ? "account" : "accounts"}
+            <p
+              className="text-xs font-medium text-ls-gray-500 dark:text-ls-gray-400 mt-0.5"
+              title={
+                refundedTotal > 0
+                  ? `Net of ${refundedTotal.toFixed(2)} STRK the vault sent back to leaked accounts and rescued again`
+                  : undefined
+              }
+            >
+              {totalCount} verified {totalCount === 1 ? "account" : "accounts"}
+              {unverifiedCount > 0 && <> · {unverifiedCount} unproven</>}
             </p>
           )}
         </div>
