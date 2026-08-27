@@ -26,6 +26,10 @@ function sameAddress(a?: string | null, b?: string | null): boolean {
   }
 }
 
+function txUrl(network: NetworkKey, txHash: string): string {
+  return `https://${network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${txHash}`;
+}
+
 function shortAddr(a?: string | null): string {
   if (!a) return "";
   return a.length > 18 ? `${a.slice(0, 10)}…${a.slice(-6)}` : a;
@@ -37,10 +41,26 @@ type NetworkKey = "mainnet" | "sepolia";
 // 0 = Mainnet, 2 = Sepolia).
 const NETWORK_INDEX: Record<NetworkKey, number> = { mainnet: 0, sepolia: 2 };
 
+interface RescueProof {
+  txHash: string;
+  amount: number;
+  accountAddress: string | null;
+  verified: boolean;
+}
+
 interface Claimable {
   repoUrl: string;
   network: NetworkKey;
   amount: number;
+  /** Rescued STRK proven against the chain. */
+  verified: number;
+  /** Ledger lines with no usable proof — left out of `amount`. */
+  unverified: number;
+  /** STRK the vault sent back to the leaked account and swept again. */
+  refunded: number;
+  /** The vault doesn't currently hold enough to back the full amount. */
+  cappedByBalance: boolean;
+  proofs: RescueProof[];
 }
 
 interface Claim {
@@ -54,6 +74,64 @@ interface Claim {
   paidTxHash?: string;
   paidPrivately?: boolean;
   paidNet?: number;
+}
+
+// Where a claimable figure comes from: the repo the key leaked in, the rescue
+// transactions that put the STRK in the vault, and anything the number was
+// reduced by. An owner is being asked to trust a payout is owed to them, so
+// the evidence travels with the amount rather than living in a ledger nobody
+// can see.
+function ProvenanceNote({ claimable }: { claimable: Claimable }) {
+  const proven = claimable.proofs.filter((p) => p.verified);
+  const account = proven.find((p) => p.accountAddress)?.accountAddress ?? null;
+
+  return (
+    <div className="rounded-xl border border-ls-gray-200 dark:border-ls-gray-700 bg-ls-gray-50 dark:bg-ls-gray-800/60 px-4 py-3">
+      <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+        <ShieldCheck size={13} /> Source verified on-chain
+      </p>
+      <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 mt-1.5">
+        A key committed to{" "}
+        <a href={claimable.repoUrl} target="_blank" rel="noreferrer" className="font-semibold text-black dark:text-white hover:underline">
+          {claimable.repoUrl.replace("https://github.com/", "")}
+        </a>{" "}
+        funded{" "}
+        {account ? (
+          <span className="font-mono">{shortAddr(account)}</span>
+        ) : (
+          "an account"
+        )}
+        , and {proven.length === 1 ? "this transaction" : `these ${proven.length} transactions`} swept it into the Aegis vault:
+      </p>
+      <ul className="mt-2 space-y-1">
+        {proven.slice(0, 4).map((p) => (
+          <li key={p.txHash} className="text-xs flex items-center justify-between gap-3">
+            <a href={txUrl(claimable.network, p.txHash)} target="_blank" rel="noreferrer" className="link-arrow font-mono">
+              {p.txHash.slice(0, 10)}…{p.txHash.slice(-4)} <ExternalLink size={10} />
+            </a>
+            <span className="tabular-nums text-ls-gray-500 dark:text-ls-gray-400">{p.amount.toFixed(4)} STRK</span>
+          </li>
+        ))}
+        {proven.length > 4 && (
+          <li className="text-xs text-ls-gray-400">+ {proven.length - 4} more</li>
+        )}
+      </ul>
+      {(claimable.refunded > 0.0001 || claimable.unverified > 0.0001 || claimable.cappedByBalance) && (
+        <ul className="mt-2.5 pt-2.5 border-t border-ls-gray-200 dark:border-ls-gray-700 space-y-1 text-xs text-ls-gray-500 dark:text-ls-gray-400">
+          {claimable.refunded > 0.0001 && (
+            <li>
+              −{claimable.refunded.toFixed(4)} STRK the vault sent back to that account and rescued again — the same
+              money, so it is only claimable once.
+            </li>
+          )}
+          {claimable.unverified > 0.0001 && (
+            <li>−{claimable.unverified.toFixed(4)} STRK logged as rescued but not provable on-chain.</li>
+          )}
+          {claimable.cappedByBalance && <li>Limited by what the vault currently holds.</li>}
+        </ul>
+      )}
+    </div>
+  );
 }
 
 function TipSlider({ value, onChange, amount }: { value: number; onChange: (v: number) => void; amount: number }) {
@@ -424,6 +502,7 @@ export function ClaimPanel() {
                         </div>
                       </div>
                       <div className="space-y-3">
+                        <ProvenanceNote claimable={c} />
                         {renderAddressField()}
                         <TipSlider value={tip} onChange={(v) => setTips((t) => ({ ...t, [key]: v }))} amount={c.amount} />
                         {receivingFromWallet && (
