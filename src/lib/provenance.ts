@@ -458,12 +458,3 @@ export async function getProvenance(): Promise<Record<Network, NetworkProvenance
   await kvSet(CACHE_KEY, JSON.stringify(value), CACHE_TTL_S);
   return value;
 }
-
-/** Attributable STRK for one repo on one network — 0 if nothing is proven. */
-export function attributableFor(
-  provenance: Record<Network, NetworkProvenance>,
-  repoUrl: string,
-  network: Network,
-): number {
-  return provenance[network].repos.find((r) => r.repoUrl === repoUrl)?.attributable ?? 0;
-}
