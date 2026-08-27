@@ -61,6 +61,8 @@ export interface RescueProof {
   observedAmount: number | null;
   /** File in the repo the key was found in, when the rescue recorded one. */
   sourceFile?: string;
+  /** The chain couldn't be reached — unproven for now, but not disproven. */
+  unreachable?: boolean;
   reason?: string;
 }
 
@@ -79,6 +81,8 @@ export interface RepoProvenance {
 }
 
 export interface NetworkProvenance {
+  /** True when the chain couldn't be read in full, so these numbers are held back. */
+  partial: boolean;
   verified: number;
   unverified: number;
   refunded: number;
@@ -86,20 +90,27 @@ export interface NetworkProvenance {
   repos: RepoProvenance[];
 }
 
-async function rpc<T>(network: Network, method: string, params: unknown): Promise<T | null> {
+// "The node answered and said no" and "the node didn't answer" have to stay
+// apart here. The first is evidence; the second is a network blip, and treating
+// it as evidence would quietly wipe an owner's claimable balance for as long as
+// the answer stayed cached.
+type RpcOutcome<T> = { answered: true; result: T | null } | { answered: false; result: null };
+
+async function rpc<T>(network: Network, method: string, params: unknown): Promise<RpcOutcome<T>> {
   const url = RPC_URL[network];
-  if (!url) return null;
+  if (!url) return { answered: false, result: null };
   try {
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
     });
+    if (!res.ok) return { answered: false, result: null };
     const json = await res.json();
-    if (json.error) return null;
-    return json.result as T;
+    if (json.error) return { answered: true, result: null };
+    return { answered: true, result: json.result as T };
   } catch {
-    return null;
+    return { answered: false, result: null };
   }
 }
 
@@ -187,11 +198,13 @@ interface Receipt {
 // Reads one rescue transaction: did it happen, did it succeed, how much STRK
 // did it put in the vault, and who sent it. The sender is the leaked account,
 // which is how a rescue ties back to the key found in the repo.
-async function readChain(network: Network, txHash: string): Promise<ChainFacts | null> {
+async function readChain(network: Network, txHash: string): Promise<ChainFacts | null | undefined> {
   const safe = SAFE_WALLET[network];
   if (!safe) return null;
 
-  const receipt = await rpc<Receipt>(network, "starknet_getTransactionReceipt", [txHash]);
+  const outcome = await rpc<Receipt>(network, "starknet_getTransactionReceipt", [txHash]);
+  if (!outcome.answered) return undefined;
+  const receipt = outcome.result;
   if (!receipt) return { found: false, succeeded: false, blockNumber: null, intoVault: 0, from: null };
 
   const blockNumber = receipt.block_number ?? null;
@@ -219,7 +232,7 @@ async function chainFacts(
   network: Network,
   txHash: string,
   cached: Map<string, string>,
-): Promise<ChainFacts | null> {
+): Promise<ChainFacts | null | undefined> {
   const key = factsKey(network, txHash);
   const hit = cached.get(key);
   if (hit) {
@@ -231,7 +244,7 @@ async function chainFacts(
   }
 
   const facts = await readChain(network, txHash);
-  if (!facts) return null;
+  if (!facts) return facts;
   // A mined transaction is settled for good; a miss might just be a tx that
   // hasn't been indexed yet, so don't let that stick.
   await kvSet(key, JSON.stringify(facts), facts.found ? undefined : 300);
@@ -254,6 +267,7 @@ async function verifyRecord(record: RescueRecord, cached: Map<string, string>): 
   };
 
   const facts = await chainFacts(record.network, record.txHash, cached);
+  if (facts === undefined) return { ...base, verified: false, unreachable: true, reason: "could not reach the chain to check this" };
   if (!facts) return { ...base, verified: false, reason: "no safe wallet configured for this network" };
   if (!facts.found) return { ...base, verified: false, reason: "transaction not found on chain" };
 
@@ -275,15 +289,19 @@ async function verifyRecord(record: RescueRecord, cached: Map<string, string>): 
 // recipient. Only outflows landing on a rescued account count as refunds — the
 // rest (shielding into the privacy pool, paying a claim) are the vault doing
 // its job, not money going back around the loop.
-async function refundsByAccount(network: Network, fromBlock: number): Promise<Map<string, number>> {
+async function refundsByAccount(
+  network: Network,
+  fromBlock: number,
+): Promise<{ totals: Map<string, number>; complete: boolean }> {
   const safe = SAFE_WALLET[network];
   const totals = new Map<string, number>();
-  if (!safe) return totals;
+  if (!safe) return { totals, complete: false };
+  let complete = true;
 
   let continuationToken: string | undefined;
   let pages = 0;
   do {
-    const result = await rpc<{ events: { keys: string[]; data: string[] }[]; continuation_token?: string }>(
+    const outcome = await rpc<{ events: { keys: string[]; data: string[] }[]; continuation_token?: string }>(
       network,
       "starknet_getEvents",
       [
@@ -297,7 +315,11 @@ async function refundsByAccount(network: Network, fromBlock: number): Promise<Ma
         },
       ],
     );
-    if (!result) break;
+    if (!outcome.answered || !outcome.result) {
+      complete = false;
+      break;
+    }
+    const result = outcome.result;
     for (const event of result.events) {
       const to = addressKey(event.keys[2]);
       totals.set(to, (totals.get(to) ?? 0) + u256ToStrk(event.data[0], event.data[1]));
@@ -306,7 +328,10 @@ async function refundsByAccount(network: Network, fromBlock: number): Promise<Ma
     pages++;
   } while (continuationToken && pages < 40);
 
-  return totals;
+  // Stopping early leaves refunds unaccounted for, which would overstate what
+  // is claimable — the one direction that must never be guessed at.
+  if (continuationToken) complete = false;
+  return { totals, complete };
 }
 
 async function buildNetwork(
@@ -318,9 +343,15 @@ async function buildNetwork(
   const proofs = await Promise.all(records.map((r) => verifyRecord(r, cached)));
 
   const blocks = proofs.filter((p) => p.verified && p.blockNumber !== null).map((p) => p.blockNumber as number);
-  const refunds = blocks.length > 0
+  const scan = blocks.length > 0
     ? await refundsByAccount(network, Math.min(...blocks) - REFUND_LOOKBACK_MARGIN)
-    : new Map<string, number>();
+    : { totals: new Map<string, number>(), complete: true };
+  const refunds = scan.totals;
+  // Anything unread — a receipt we couldn't fetch, a refund scan that stopped
+  // short — means the picture is incomplete, so nothing here is offered up as
+  // claimable until it can be read properly. It self-heals on the next request,
+  // since a partial answer is never cached.
+  const partial = !scan.complete || proofs.some((p) => p.unreachable);
 
   const byRepo = new Map<string, RescueProof[]>();
   for (const proof of proofs) {
@@ -353,13 +384,14 @@ async function buildNetwork(
       verified,
       unverified,
       refunded,
-      attributable: Math.max(0, verified - refunded),
+      attributable: partial ? 0 : Math.max(0, verified - refunded),
       proofs: repoProofs,
     });
   }
 
   const sum = (pick: (r: RepoProvenance) => number) => repos.reduce((total, r) => total + pick(r), 0);
   return {
+    partial,
     verified: sum((r) => r.verified),
     unverified: sum((r) => r.unverified),
     refunded: sum((r) => r.refunded),
@@ -400,6 +432,7 @@ export async function getProvenance(): Promise<Record<Network, NetworkProvenance
     buildNetwork("sepolia", ledger, cached),
   ]);
   const value = { mainnet, sepolia };
+  if (mainnet.partial || sepolia.partial) return value;
   memo = { at: Date.now(), value };
   await kvSet(CACHE_KEY, JSON.stringify(value), CACHE_TTL_S);
   return value;
