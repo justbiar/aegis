@@ -68,6 +68,31 @@ funds through the STRK20 shielded pool removes that window: the holding
 balance isn't linkable on-chain, and payout to a verified owner is a
 private transfer, not a public, front-runnable one.
 
+## What a claim is backed by
+
+A claim is only ever worth what the chain can account for. The rescue ledger
+is Aegis writing down its own work, so before a figure is offered to an owner
+every line in it is checked against its receipt: the transaction has to exist,
+have succeeded, and have moved exactly that much STRK into the safe wallet —
+and, for rescues that recorded which account they swept, have been sent by
+that account. Lines that fail are reported as unproven and are not claimable.
+
+Two things are then subtracted. Any STRK the vault has sent back out to a
+leaked account is netted off, because the bot rescues it again on the next
+pass and the same money would otherwise be claimable twice — refunding a
+leaked account to re-test a sweep is routine, and Sepolia carries 900 STRK of
+exactly that. And the total on a network is held under what the safe wallet
+actually holds, minus what pending claims already promise; if the vault falls
+short, every claimant's figure shrinks by the same proportion rather than the
+shortfall landing on whoever asks last.
+
+What survives is money traceable to a specific leak in a specific repository.
+The claim card shows that trail — the repo, the account the key derived to,
+and each rescue transaction — alongside anything the figure was reduced by.
+Whatever else is in the vault, including deposits that arrived from an address
+tied to no repo at all, is nobody's to claim and is reported separately as
+unattributed.
+
 ## Claim & payout flow
 
 Payout is deliberately **not** automatic — paying a claim the instant it's
