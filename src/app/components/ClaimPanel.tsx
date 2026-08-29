@@ -48,12 +48,6 @@ interface RescueProof {
   verified: boolean;
 }
 
-interface Drill {
-  repoUrl: string;
-  network: NetworkKey;
-  rescued: number;
-}
-
 interface Claimable {
   repoUrl: string;
   network: NetworkKey;
@@ -381,7 +375,6 @@ export function ClaimPanel() {
   const walletNetworkName = constants.Strk20Networks[myFrontendProviderIndex];
 
   const [claimable, setClaimable] = useState<Claimable[]>([]);
-  const [drills, setDrills] = useState<Drill[]>([]);
   const [claims, setClaims] = useState<Claim[]>([]);
   const [adminPending, setAdminPending] = useState<Claim[]>([]);
   const [tips, setTips] = useState<Record<string, number>>({});
@@ -415,7 +408,6 @@ export function ClaimPanel() {
       .then((r) => r.json())
       .then((d) => {
         setClaimable(d.claimable ?? []);
-        setDrills(d.drills ?? []);
         setClaims(d.claims ?? []);
       })
       .catch(() => {});
@@ -665,12 +657,9 @@ export function ClaimPanel() {
   // ── CLAIMANT (normal user) PANEL ───────────────────────────────────────
   const visibleClaimable = claimable.filter((c) => c.network === selectedNetwork);
   const visibleClaims = claims.filter((c) => c.network === selectedNetwork);
-  const visibleDrills = drills.filter((d) => d.network === selectedNetwork);
-  const hasAny = claimable.length > 0 || claims.length > 0 || drills.length > 0;
+  const hasAny = claimable.length > 0 || claims.length > 0;
   const netCount = (n: NetworkKey) =>
-    claimable.filter((c) => c.network === n).length +
-    claims.filter((c) => c.network === n).length +
-    drills.filter((d) => d.network === n).length;
+    claimable.filter((c) => c.network === n).length + claims.filter((c) => c.network === n).length;
 
   return (
     <section id="claim" className="py-16">
@@ -716,7 +705,7 @@ export function ClaimPanel() {
                 let them register it here so the payout can actually reach them. */}
             <RegisterWallet network={selectedNetwork} onRegistered={loadMine} />
 
-            {visibleClaimable.length === 0 && visibleClaims.length === 0 && visibleDrills.length === 0 ? (
+            {visibleClaimable.length === 0 && visibleClaims.length === 0 ? (
               <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400">
                 Nothing on <span className="font-semibold capitalize">{selectedNetwork}</span> — switch networks above to see your other claims.
               </p>
@@ -856,35 +845,6 @@ export function ClaimPanel() {
                     </ClaimCard>
                   );
                 })}
-
-                {/* Aegis's own planted leak. Kept visible so the panel says
-                    what happened rather than going blank, and kept plainly
-                    unclaimable so it can't be mistaken for money owed. */}
-                {visibleDrills.map((d) => (
-                  <div
-                    key={`${d.repoUrl}::${d.network}::drill`}
-                    className="ls-card mb-3 flex flex-wrap items-start justify-between gap-4"
-                  >
-                    <div className="min-w-0">
-                      <span className="tag-clean inline-flex items-center gap-1.5 mb-2">
-                        <ShieldCheck size={11} /> Aegis&apos;s own test leak
-                      </span>
-                      <p className="font-semibold text-black dark:text-white truncate">
-                        {d.repoUrl.replace("https://github.com/", "")}
-                      </p>
-                      <p className="text-xs text-ls-gray-500 dark:text-ls-gray-400 mt-2 max-w-md">
-                        Aegis swept this key out of its own fixture, funded from its own wallet and a faucet. Every
-                        transaction is real and proven — but nobody lost this money, so there is nothing to claim.
-                      </p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="hero-stat text-2xl text-ls-gray-400 leading-none tracking-tight">
-                        {d.rescued.toFixed(4)}
-                      </p>
-                      <p className="text-[11px] font-semibold text-ls-gray-400 mt-0.5">STRK swept</p>
-                    </div>
-                  </div>
-                ))}
 
                 {/* Subtle operator entry point — connecting the safe wallet
                     switches this whole panel into the admin payout queue. */}

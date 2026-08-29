@@ -98,10 +98,13 @@ a fresh figure appears only when someone actually funds a leaked wallet again �
 and then it is genuinely theirs. Money the vault itself put there is netted
 out, and nothing can be promised that the vault does not hold.
 
-`SELF_TEST_REPOS` can name repositories whose leak was planted rather than
-lost — their rescues are reported in full but never claimable. It is empty by
-default: a repository's verified owner is the rightful claimant of whatever was
-in their wallet.
+One case the funder check cannot reach: netting by address only works while the
+money stays in one token. The mainnet fixture account took ETH from the vault
+and swapped it into STRK, so the STRK arrived from a DEX router and nothing in
+the transfer graph names Aegis as its source. Following value across swaps to
+prove that is unbounded work and would still be a guess. A drill we set up is
+something we know instead, so it is declared — `SELF_TEST_REPOS`, defaulting to
+this repository. Those rescues are reported in full and never claimable.
 
 The same check runs again at payout. A claim is priced when it is filed and
 then waits, so what backs it can shrink in between; a request that no longer

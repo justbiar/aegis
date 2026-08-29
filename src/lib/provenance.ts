@@ -47,12 +47,14 @@ const KNOWN_FAUCETS: Record<Network, string[]> = {
   mainnet: [],
 };
 
-// Repositories to treat as drills: rescued from a leak that was planted rather
-// than lost, reported in full but never claimable. Empty by default — a repo's
-// verified owner is the rightful claimant of whatever was in their wallet, and
-// that holds for our own repo too. This stays as a switch for a fixture that
-// genuinely shouldn't be claimable by anyone.
-const SELF_TEST_REPOS = (process.env.SELF_TEST_REPOS ?? "")
+// Repositories whose leak was planted rather than lost. Netting by funder
+// address only works while the money stays in one token: the mainnet fixture
+// took ETH from the vault and swapped it into STRK, so the STRK arrived from a
+// DEX router and nothing in the transfer graph names Aegis as its source.
+// Following value across swaps to prove that is unbounded work and would still
+// be a guess — but a drill we set up is something we know. Rescues out of these
+// are reported in full and never claimable.
+const SELF_TEST_REPOS = (process.env.SELF_TEST_REPOS ?? "https://github.com/justbiar/aegis")
   .split(",")
   .map((r) => r.trim().toLowerCase().replace(/\/+$/, ""))
   .filter(Boolean);

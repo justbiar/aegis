@@ -162,7 +162,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  if (!login) return NextResponse.json({ drills: [], claimable: [], claims: [] });
+  if (!login) return NextResponse.json({ claimable: [], claims: [] });
 
   const provenance = await getProvenance();
   // A pending claim against a leak Aegis planted itself is a request nobody can
@@ -184,17 +184,7 @@ export async function GET(req: NextRequest) {
   // the owner's own card, which is the one place it must not.
   const backed = backingForPending(claims, provenance);
 
-  // The owner of a self-test repo — us — would otherwise see an empty panel
-  // with no explanation for money they know was swept out of their repo. The
-  // drill is shown for what it is: real work, nothing owed.
-  const drills = NETWORKS.flatMap((network) =>
-    provenance[network].repos
-      .filter((r) => r.selfTest && r.verified > 0 && repoOwner(r.repoUrl) === login.toLowerCase())
-      .map((r) => ({ repoUrl: r.repoUrl, network, rescued: r.verified })),
-  );
-
   return NextResponse.json({
-    drills,
     claimable,
     claims: myClaims
       .map((c) => ({ ...c, backedAmount: c.status === "pending" ? backed.get(claimKey(c)) ?? 0 : c.amount }))
