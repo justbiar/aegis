@@ -19,6 +19,10 @@ interface NetworkVaultInfo {
   // rather than from a victim. Sweeping it back recovered nothing, so it is
   // subtracted rather than counted as a rescue.
   selfFundedTotal: number;
+  // Rescued out of leaks Aegis planted itself (its own test fixture). Real
+  // work, real transactions, but nobody lost this money — so it is reported
+  // and never claimable.
+  selfTestTotal: number;
   // rescuedTotal − selfFundedTotal: funds here that trace back to a real leak
   // in a known repo. Everything else in the balance arrived from somewhere
   // Aegis can't account for and is nobody's to claim.
@@ -47,6 +51,7 @@ async function vaultInfo(
     unverifiedTotal: provenance.unverified,
     unverifiedCount: proofs.filter((p) => !p.verified).length,
     selfFundedTotal: provenance.selfFunded,
+    selfTestTotal: provenance.selfTestTotal,
     attributableTotal: provenance.attributable,
     requestedTotal: pending.reduce((sum, c) => sum + c.amount, 0),
     requestedCount: pending.length,

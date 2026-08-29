@@ -506,8 +506,9 @@ export function ClaimPanel() {
                       <>Only {(c.backedAmount ?? 0).toFixed(4)} STRK of this is still backed by proven rescues — the rest
                       was funded by Aegis or a faucet rather than lost by a victim, so it isn&apos;t owed.</>
                     ) : (
-                      <>Nothing backs this request any more: the funds it was priced against came from Aegis&apos;s own
-                      wallet or a faucet, not from a victim, so sweeping them recovered nothing.</>
+                      <>Nothing backs this request any more: the leak it was priced against is one Aegis planted
+                      itself, funded from its own wallet or a faucet — sweeping it back recovered nothing anyone
+                      lost.</>
                     )}
                   </p>
                 </div>

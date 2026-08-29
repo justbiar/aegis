@@ -91,6 +91,14 @@ is held under what the safe wallet actually holds, minus what pending claims
 already promise; if it falls short, every claimant's figure shrinks by the same
 proportion rather than the shortfall landing on whoever asks last.
 
+One thing the chain cannot settle on its own: Aegis's own test leak. The
+mainnet fixture account was funded in ETH from the vault and swapped it into
+STRK, so the STRK arrives from a DEX router and nothing in the transfer graph
+names Aegis as its source. A drill we set up is something we know rather than
+something we deduce, so it is declared instead — `SELF_TEST_REPOS`, defaulting
+to this repository. Rescues out of it are reported in full, count as real work,
+and are never claimable.
+
 The same check runs again at payout. A claim is priced when it is filed and
 then waits, so what backs it can shrink in between; a request that no longer
 holds up is kept out of the batch and shown with the reason.
