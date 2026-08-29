@@ -192,12 +192,14 @@ export async function GET(req: NextRequest) {
   if (!login) return NextResponse.json({ drills: [], claimable: [], claims: [] });
 
   const provenance = await getProvenance();
-  // Claims against a leak Aegis planted itself are drills. They stay in the
-  // ledger and the vault still reports what was swept, but there is nothing
-  // here for an owner or an operator to act on, so the panel doesn't carry
-  // them around as requests.
+  // A pending claim against a leak Aegis planted itself is a request nobody can
+  // act on, so the panel doesn't carry it around. A paid one is different: that
+  // payout happened, on-chain, and hiding it makes the page report "paid: 0"
+  // for STRK that demonstrably moved.
   const myClaims = claims.filter(
-    (c) => c.githubLogin.toLowerCase() === login.toLowerCase() && !isSelfTestRepo(c.repoUrl),
+    (c) =>
+      c.githubLogin.toLowerCase() === login.toLowerCase() &&
+      !(c.status === "pending" && isSelfTestRepo(c.repoUrl)),
   );
 
   // Rows are computed for every repo and then filtered to this owner: the
