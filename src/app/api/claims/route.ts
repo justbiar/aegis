@@ -189,7 +189,7 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  if (!login) return NextResponse.json({ claimable: [], claims: [] });
+  if (!login) return NextResponse.json({ drills: [], claimable: [], claims: [] });
 
   const provenance = await getProvenance();
   // Claims against a leak Aegis planted itself are drills. They stay in the
