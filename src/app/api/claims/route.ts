@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getClaims, recordClaimRequest, updatePendingClaim, type ClaimRecord } from "@/lib/claims";
-import { getProvenance, type NetworkProvenance, type RescueProof } from "@/lib/provenance";
+import { getProvenance, isSelfTestRepo, type NetworkProvenance, type RescueProof } from "@/lib/provenance";
 import { rpcBalanceOf } from "@/lib/scan";
 import { NETWORKS, SAFE_WALLET, STRK_TOKEN, type Network } from "@/lib/networks";
 
@@ -184,7 +184,7 @@ export async function GET(req: NextRequest) {
     const backed = backingForPending(claims, provenance);
     return NextResponse.json({
       claims: claims
-        .filter((c) => c.status === "pending")
+        .filter((c) => c.status === "pending" && !isSelfTestRepo(c.repoUrl))
         .map((c) => ({ ...c, backedAmount: backed.get(claimKey(c)) ?? 0 })),
     });
   }
@@ -192,7 +192,13 @@ export async function GET(req: NextRequest) {
   if (!login) return NextResponse.json({ claimable: [], claims: [] });
 
   const provenance = await getProvenance();
-  const myClaims = claims.filter((c) => c.githubLogin.toLowerCase() === login.toLowerCase());
+  // Claims against a leak Aegis planted itself are drills. They stay in the
+  // ledger and the vault still reports what was swept, but there is nothing
+  // here for an owner or an operator to act on, so the panel doesn't carry
+  // them around as requests.
+  const myClaims = claims.filter(
+    (c) => c.githubLogin.toLowerCase() === login.toLowerCase() && !isSelfTestRepo(c.repoUrl),
+  );
 
   // Rows are computed for every repo and then filtered to this owner: the
   // balance cap is a network-wide question, so it can't be answered from one
@@ -241,6 +247,13 @@ export async function POST(req: NextRequest) {
 
   const claims = await getClaims();
   const provenance = await getProvenance();
+
+  if (isSelfTestRepo(repoUrl)) {
+    return NextResponse.json(
+      { error: "This leak is one Aegis planted itself — nothing was lost, so there is nothing to claim" },
+      { status: 409 },
+    );
+  }
 
   const repo = provenance[network]?.repos.find((r) => r.repoUrl === repoUrl);
   if (!repo || repo.verified <= 0) {

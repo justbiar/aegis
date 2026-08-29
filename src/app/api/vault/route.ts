@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { rpcBalanceOf } from "@/lib/scan";
 import { SAFE_WALLET, RPC_URL, STRK_TOKEN, type Network } from "@/lib/networks";
 import { ledgerAvailable } from "@/lib/ledger";
-import { getProvenance, type NetworkProvenance } from "@/lib/provenance";
+import { getProvenance, isSelfTestRepo, type NetworkProvenance } from "@/lib/provenance";
 import { getClaims } from "@/lib/claims";
 
 interface NetworkVaultInfo {
@@ -42,7 +42,11 @@ async function vaultInfo(
   const address = SAFE_WALLET[network];
   const proofs = provenance.repos.flatMap((r) => r.proofs);
 
-  const pending = claims.filter((c) => c.network === network && c.status === "pending");
+  // Drills are excluded here too — a request nobody can see or act on should
+  // not sit in the banner as STRK someone is waiting for.
+  const pending = claims.filter(
+    (c) => c.network === network && c.status === "pending" && !isSelfTestRepo(c.repoUrl),
+  );
 
   const base = {
     address,
