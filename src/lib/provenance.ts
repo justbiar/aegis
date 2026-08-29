@@ -36,19 +36,24 @@ const AMOUNT_TOLERANCE = 1e-9;
 // On-chain the two are identical — a victim topping up a wallet whose key
 // leaked looks exactly like us topping up a test one — so the only way Aegis
 // can tell them apart is to know its own addresses.
+// Deliberately empty. A faucet was in here, and it was the wrong call: the
+// faucet hands STRK to the wallet's owner, so that money is theirs like any
+// other. Where it came from doesn't decide who it belongs to — the leaked
+// wallet does. What still belongs here is money that was never anyone's but
+// Aegis's, which is why the safe wallet stays in the list below: STRK the
+// vault sends a leaked account and then sweeps back was never the owner's,
+// and counting it would let the vault inflate what it owes by paying itself.
 const KNOWN_FAUCETS: Record<Network, string[]> = {
-  // Sepolia STRK faucet, identified from the 3,000 STRK it sent the test leak.
-  sepolia: ["0x00606724f531419f4c8fd1d28d898bc05e1d42be9cec8bfcf202b76f2241a26c"],
+  sepolia: [],
   mainnet: [],
 };
 
-// Repositories whose leak Aegis planted itself. Tracing this from the chain
-// alone turns out to be unbounded: the mainnet test account was funded in ETH
-// from the vault and swapped it into STRK, so the STRK arrived from a DEX
-// router and no amount of following transfers names us as the source. A drill
-// we set up is something we know rather than something we deduce, so it is
-// declared. Anything here is reported and never claimable.
-const SELF_TEST_REPOS = (process.env.SELF_TEST_REPOS ?? "https://github.com/justbiar/aegis")
+// Repositories to treat as drills: rescued from a leak that was planted rather
+// than lost, reported in full but never claimable. Empty by default — a repo's
+// verified owner is the rightful claimant of whatever was in their wallet, and
+// that holds for our own repo too. This stays as a switch for a fixture that
+// genuinely shouldn't be claimable by anyone.
+const SELF_TEST_REPOS = (process.env.SELF_TEST_REPOS ?? "")
   .split(",")
   .map((r) => r.trim().toLowerCase().replace(/\/+$/, ""))
   .filter(Boolean);

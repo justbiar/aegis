@@ -77,27 +77,28 @@ have succeeded, and have moved exactly that much STRK into the safe wallet —
 and, for rescues that recorded which account they swept, have been sent by
 that account. Lines that fail are reported as unproven and are not claimable.
 
-Two things are then subtracted. The first is money that was never a victim's:
-STRK that reached a leaked account from the vault itself, from a faucet, or
-from any address the operator has declared in `NON_VICTIM_FUNDERS`. Sweeping
-that back recovers nothing and nobody is owed it. It matters more than it
-sounds — Sepolia's test account was funded with 3,000 STRK from the faucet and
-900 from the vault, and without this the ledger reads as 4,595 STRK rescued
-from a repository, claimable by its owner. On-chain the two cases are
-identical: a victim topping up a wallet whose key leaked looks exactly like us
-topping up a test one, so the only way to tell them apart is for Aegis to know
-its own addresses. The second is the vault's own capacity — a network's total
-is held under what the safe wallet actually holds, minus what pending claims
-already promise; if it falls short, every claimant's figure shrinks by the same
-proportion rather than the shortfall landing on whoever asks last.
+Two things are then subtracted. The first is money that was never the owner's:
+STRK the vault itself sent a leaked account and then swept back, plus anything
+from an address declared in `NON_VICTIM_FUNDERS`. Sepolia carries 900 STRK of
+exactly this, and without netting it the vault could inflate what it owes by
+paying itself. Where the rest of the money came from doesn't decide who it
+belongs to — a faucet, an exchange, a paycheck all hand it to the wallet's
+owner, and the wallet is what the leak exposed. The second subtraction is the
+vault's own capacity: a network's total is held under what the safe wallet
+actually holds, minus what pending claims already promise; if it falls short,
+every claimant's figure shrinks by the same proportion rather than the
+shortfall landing on whoever asks last.
 
-One thing the chain cannot settle on its own: Aegis's own test leak. The
-mainnet fixture account was funded in ETH from the vault and swapped it into
-STRK, so the STRK arrives from a DEX router and nothing in the transfer graph
-names Aegis as its source. A drill we set up is something we know rather than
-something we deduce, so it is declared instead — `SELF_TEST_REPOS`, defaulting
-to this repository. Rescues out of it are reported in full, count as real work,
-and are never claimable.
+Together these are what stops a payout loop. Paying a claim never creates a new
+one: claimable is the proven total minus everything already claimed or paid, so
+a fresh figure appears only when someone actually funds a leaked wallet again —
+and then it is genuinely theirs. Money the vault itself put there is netted
+out, and nothing can be promised that the vault does not hold.
+
+`SELF_TEST_REPOS` can name repositories whose leak was planted rather than
+lost — their rescues are reported in full but never claimable. It is empty by
+default: a repository's verified owner is the rightful claimant of whatever was
+in their wallet.
 
 The same check runs again at payout. A claim is priced when it is filed and
 then waits, so what backs it can shrink in between; a request that no longer
