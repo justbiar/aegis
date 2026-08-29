@@ -117,9 +117,10 @@ One case the funder check cannot reach: netting by address only works while the
 money stays in one token. The mainnet fixture account took ETH from the vault
 and swapped it into STRK, so the STRK arrived from a DEX router and nothing in
 the transfer graph names Aegis as its source. Following value across swaps to
-prove that is unbounded work and would still be a guess. A drill we set up is
-something we know instead, so it is declared — `SELF_TEST_REPOS`, defaulting to
-this repository. Those rescues are reported in full and never claimable.
+prove that is unbounded work and would still be a guess, so that funding is not
+netted out — a rescue whose money reached the leaked account through a swap is
+credited to the repository in full, and the balance cap is what keeps the total
+inside what the vault actually holds.
 
 The same check runs again at payout. A claim is priced when it is filed and
 then waits, so what backs it can shrink in between; a request that no longer

@@ -36,7 +36,6 @@ interface NetworkVaultInfo {
   unverifiedTotal: number;
   unverifiedCount: number;
   selfFundedTotal: number;
-  selfTestTotal: number;
   attributableTotal: number;
   unattributedBalance: number | null;
   requestedTotal: number;
@@ -68,7 +67,6 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
   const unattributed = info?.unattributedBalance ?? null;
   const unverifiedCount = info?.unverifiedCount ?? 0;
   const selfFundedTotal = info?.selfFundedTotal ?? 0;
-  const selfTestTotal = info?.selfTestTotal ?? 0;
 
   const animatedBalance = useCountUp(balance ?? 0);
   const animatedRescued = useCountUp(totalRescued);
@@ -166,7 +164,6 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
             >
               {totalCount} verified {totalCount === 1 ? "account" : "accounts"}
               {unverifiedCount > 0 && <> · {unverifiedCount} unproven</>}
-              {selfTestTotal > 0.01 && <> · {selfTestTotal.toFixed(2)} own drill</>}
             </p>
           )}
         </div>

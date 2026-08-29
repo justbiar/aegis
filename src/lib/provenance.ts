@@ -47,22 +47,6 @@ const KNOWN_FAUCETS: Record<Network, string[]> = {
   mainnet: [],
 };
 
-// Repositories whose leak was planted rather than lost. Netting by funder
-// address only works while the money stays in one token: the mainnet fixture
-// took ETH from the vault and swapped it into STRK, so the STRK arrived from a
-// DEX router and nothing in the transfer graph names Aegis as its source.
-// Following value across swaps to prove that is unbounded work and would still
-// be a guess — but a drill we set up is something we know. Rescues out of these
-// are reported in full and never claimable.
-const SELF_TEST_REPOS = (process.env.SELF_TEST_REPOS ?? "https://github.com/justbiar/aegis")
-  .split(",")
-  .map((r) => r.trim().toLowerCase().replace(/\/+$/, ""))
-  .filter(Boolean);
-
-export function isSelfTestRepo(repoUrl: string): boolean {
-  return SELF_TEST_REPOS.includes(repoUrl.trim().toLowerCase().replace(/\/+$/, ""));
-}
-
 function nonVictimFunders(network: Network): string[] {
   const configured = (process.env.NON_VICTIM_FUNDERS ?? "")
     .split(",")
@@ -117,9 +101,7 @@ export interface RepoProvenance {
   unverified: number;
   /** STRK that reached this repo's leaked accounts from Aegis or a faucet. */
   selfFunded: number;
-  /** Aegis planted this leak itself — a drill, never claimable. */
-  selfTest: boolean;
-  /** verified − selfFunded, floored at 0, and 0 for a drill. The only claimable figure. */
+  /** verified − selfFunded, floored at 0. The only claimable figure. */
   attributable: number;
   proofs: RescueProof[];
 }
@@ -127,8 +109,6 @@ export interface RepoProvenance {
 export interface NetworkProvenance {
   /** True when the chain couldn't be read in full, so these numbers are held back. */
   partial: boolean;
-  /** Rescued from leaks Aegis planted itself — reported, never claimable. */
-  selfTestTotal: number;
   verified: number;
   unverified: number;
   selfFunded: number;
@@ -446,15 +426,13 @@ async function buildNetwork(
       selfFunded += selfFunding.get(key) ?? 0;
     }
 
-    const selfTest = isSelfTestRepo(repoUrl);
     repos.push({
       repoUrl,
       network,
       verified,
       unverified,
       selfFunded,
-      selfTest,
-      attributable: partial || selfTest ? 0 : Math.max(0, verified - selfFunded),
+      attributable: partial ? 0 : Math.max(0, verified - selfFunded),
       proofs: repoProofs,
     });
   }
@@ -462,7 +440,6 @@ async function buildNetwork(
   const sum = (pick: (r: RepoProvenance) => number) => repos.reduce((total, r) => total + pick(r), 0);
   return {
     partial,
-    selfTestTotal: repos.filter((r) => r.selfTest).reduce((total, r) => total + r.verified, 0),
     verified: sum((r) => r.verified),
     unverified: sum((r) => r.unverified),
     selfFunded: sum((r) => r.selfFunded),

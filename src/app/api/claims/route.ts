@@ -5,7 +5,6 @@ import {
   backingForPending,
   claimKey,
   getProvenance,
-  isSelfTestRepo,
   type NetworkProvenance,
   type RescueProof,
 } from "@/lib/provenance";
@@ -153,7 +152,7 @@ export async function GET(req: NextRequest) {
     const backed = backingForPending(claims, provenance);
     return NextResponse.json({
       claims: claims
-        .filter((c) => c.status === "pending" && !isSelfTestRepo(c.repoUrl))
+        .filter((c) => c.status === "pending")
         .map((c) => ({ ...c, backedAmount: backed.get(claimKey(c)) ?? 0 }))
         // A request backed by nothing is a request against ownerless money.
         // It stays in the store, but the queue doesn't carry it: there is no
@@ -165,13 +164,7 @@ export async function GET(req: NextRequest) {
   if (!login) return NextResponse.json({ claimable: [], claims: [] });
 
   const provenance = await getProvenance();
-  // A pending claim against a leak Aegis planted itself is a request nobody can
-  // act on, so the panel doesn't carry it around. A paid one is different: that
-  // payout happened, on-chain, and hiding it makes the page report "paid: 0"
-  // for STRK that demonstrably moved.
-  const myClaims = claims.filter(
-    (c) => c.githubLogin.toLowerCase() === login.toLowerCase() && !(c.status === "pending" && isSelfTestRepo(c.repoUrl)),
-  );
+  const myClaims = claims.filter((c) => c.githubLogin.toLowerCase() === login.toLowerCase());
 
   // Rows are computed for every repo and then filtered to this owner: the
   // balance cap is a network-wide question, so it can't be answered from one
@@ -224,13 +217,6 @@ export async function POST(req: NextRequest) {
 
   const claims = await getClaims();
   const provenance = await getProvenance();
-
-  if (isSelfTestRepo(repoUrl)) {
-    return NextResponse.json(
-      { error: "This leak is one Aegis planted itself — nothing was lost, so there is nothing to claim" },
-      { status: 409 },
-    );
-  }
 
   const repo = provenance[network]?.repos.find((r) => r.repoUrl === repoUrl);
   if (!repo || repo.verified <= 0) {
