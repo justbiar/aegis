@@ -77,14 +77,23 @@ have succeeded, and have moved exactly that much STRK into the safe wallet —
 and, for rescues that recorded which account they swept, have been sent by
 that account. Lines that fail are reported as unproven and are not claimable.
 
-Two things are then subtracted. Any STRK the vault has sent back out to a
-leaked account is netted off, because the bot rescues it again on the next
-pass and the same money would otherwise be claimable twice — refunding a
-leaked account to re-test a sweep is routine, and Sepolia carries 900 STRK of
-exactly that. And the total on a network is held under what the safe wallet
-actually holds, minus what pending claims already promise; if the vault falls
-short, every claimant's figure shrinks by the same proportion rather than the
-shortfall landing on whoever asks last.
+Two things are then subtracted. The first is money that was never a victim's:
+STRK that reached a leaked account from the vault itself, from a faucet, or
+from any address the operator has declared in `NON_VICTIM_FUNDERS`. Sweeping
+that back recovers nothing and nobody is owed it. It matters more than it
+sounds — Sepolia's test account was funded with 3,000 STRK from the faucet and
+900 from the vault, and without this the ledger reads as 4,595 STRK rescued
+from a repository, claimable by its owner. On-chain the two cases are
+identical: a victim topping up a wallet whose key leaked looks exactly like us
+topping up a test one, so the only way to tell them apart is for Aegis to know
+its own addresses. The second is the vault's own capacity — a network's total
+is held under what the safe wallet actually holds, minus what pending claims
+already promise; if it falls short, every claimant's figure shrinks by the same
+proportion rather than the shortfall landing on whoever asks last.
+
+The same check runs again at payout. A claim is priced when it is filed and
+then waits, so what backs it can shrink in between; a request that no longer
+holds up is kept out of the batch and shown with the reason.
 
 What survives is money traceable to a specific leak in a specific repository.
 The claim card shows that trail — the repo, the account the key derived to,
