@@ -200,7 +200,16 @@ export async function GET(req: NextRequest) {
   const rows = await claimableRows(claims, provenance);
   const claimable = rows.filter((r) => repoOwner(r.repoUrl) === login.toLowerCase());
 
-  return NextResponse.json({ claimable, claims: myClaims });
+  // Claimants see the same backing check the payout queue applies. Without it a
+  // request that Aegis will no longer pay still reads as "pending payout" on
+  // the owner's own card, which is the one place it must not.
+  const backed = backingForPending(claims, provenance);
+  return NextResponse.json({
+    claimable,
+    claims: myClaims.map((c) =>
+      c.status === "pending" ? { ...c, backedAmount: backed.get(claimKey(c)) ?? 0 } : c,
+    ),
+  });
 }
 
 // POST { repoUrl, network, starknetAddress } — registers where a verified

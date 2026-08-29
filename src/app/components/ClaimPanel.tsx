@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
-import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Check, Wallet2, ShieldCheck } from "lucide-react";
+import { ExternalLink, Loader2, KeyRound, CheckCircle2, Clock3, Sparkles, Check, Wallet2, ShieldCheck, ChevronDown, Ban } from "lucide-react";
 import * as constants from "@/utils/constants";
 import { useStoreWallet } from "./Wallet/walletContext";
 import { useFrontendProvider } from "./client/provider/providerContext";
@@ -76,6 +76,79 @@ interface Claim {
   paidNet?: number;
   /** Operator queue only: how much of this claim the chain still backs. */
   backedAmount?: number;
+}
+
+// One row per claim, with everything but the headline folded away. A repo owner
+// with a dozen requests should see a list they can scan, not a wall of sliders
+// and addresses — so the amount and status stay visible and the rest opens on
+// demand.
+function ClaimCard({
+  tag,
+  repoUrl,
+  amount,
+  amountNote,
+  muted,
+  defaultOpen,
+  children,
+}: {
+  tag: React.ReactNode;
+  repoUrl: string;
+  amount: number;
+  amountNote?: string;
+  muted?: boolean;
+  defaultOpen?: boolean;
+  children?: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(Boolean(defaultOpen));
+  return (
+    <div className={`ls-card mb-3 ${muted ? "border-amber-300 dark:border-amber-800/60" : ""}`}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="w-full flex flex-wrap items-start justify-between gap-4 text-left"
+      >
+        <div className="min-w-0">
+          {tag}
+          <p className="font-semibold text-black dark:text-white truncate">
+            {repoUrl.replace("https://github.com/", "")}
+          </p>
+        </div>
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="text-right">
+            <p className={`hero-stat text-2xl leading-none tracking-tight ${muted ? "text-ls-gray-400" : "text-black dark:text-white"}`}>
+              {amount.toFixed(4)}
+            </p>
+            <p className="text-[11px] font-semibold text-ls-gray-400 mt-0.5">{amountNote ?? "STRK"}</p>
+          </div>
+          {children && (
+            <ChevronDown
+              size={16}
+              className={`text-ls-gray-400 transition-transform ${open ? "rotate-180" : ""}`}
+            />
+          )}
+        </div>
+      </button>
+      {open && children && <div className="mt-4 pt-4 border-t border-ls-gray-100 dark:border-ls-gray-800">{children}</div>}
+    </div>
+  );
+}
+
+// The three numbers a repo owner actually wants, for the network they're
+// looking at: what they can still ask for, what they've asked for and are
+// waiting on, and what has already reached them.
+function ClaimSummary({ cells }: { cells: { label: string; value: number; tone?: string }[] }) {
+  return (
+    <div className="grid grid-cols-3 gap-4 mb-6 rounded-xl border border-ls-gray-200 dark:border-ls-gray-800 px-4 py-3">
+      {cells.map((c) => (
+        <div key={c.label}>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-ls-gray-400 mb-1">{c.label}</p>
+          <p className={`hero-stat text-xl leading-none ${c.tone ?? "text-black dark:text-white"}`}>
+            {c.value.toFixed(2)} <span className="text-[11px] font-semibold text-ls-gray-400">STRK</span>
+          </p>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // Where a claimable figure comes from: the repo the key leaked in, the rescue
@@ -460,6 +533,18 @@ export function ClaimPanel() {
           {header}
           <NetworkToggle selected={selectedNetwork} onSelect={(n) => setFrontendProviderIndex(NETWORK_INDEX[n])} count={adminCount} />
 
+          <ClaimSummary
+            cells={[
+              {
+                label: "Payable now",
+                value: payouts.filter((r) => r.payable).reduce((sum, r) => sum + r.net, 0),
+                tone: "text-emerald-600 dark:text-emerald-400",
+              },
+              { label: "Requested", value: adminForNet.reduce((sum, c) => sum + c.amount, 0) },
+              { label: "Held back", value: unbacked.reduce((sum, c) => sum + c.amount, 0) },
+            ]}
+          />
+
           <RegisterWallet network={selectedNetwork} onRegistered={loadPending} />
 
           {adminForNet.length === 0 ? (
@@ -597,6 +682,25 @@ export function ClaimPanel() {
           <>
             <NetworkToggle selected={selectedNetwork} onSelect={(n) => setFrontendProviderIndex(NETWORK_INDEX[n])} count={netCount} />
 
+            <ClaimSummary
+              cells={[
+                { label: "Claimable", value: visibleClaimable.reduce((sum, c) => sum + c.amount, 0) },
+                {
+                  label: "Requested",
+                  value: visibleClaims
+                    .filter((c) => c.status === "pending" && (c.backedAmount ?? 0) >= c.amount - 1e-4)
+                    .reduce((sum, c) => sum + c.amount, 0),
+                },
+                {
+                  label: "Paid",
+                  value: visibleClaims
+                    .filter((c) => c.status === "paid")
+                    .reduce((sum, c) => sum + (c.paidNet ?? c.amount), 0),
+                  tone: "text-emerald-600 dark:text-emerald-400",
+                },
+              ]}
+            />
+
             {/* If the claimant's receiving wallet isn't registered with the pool,
                 let them register it here so the payout can actually reach them. */}
             <RegisterWallet network={selectedNetwork} onRegistered={loadMine} />
@@ -612,23 +716,17 @@ export function ClaimPanel() {
                   const key = `${c.repoUrl}::${c.network}`;
                   const tip = tips[key] ?? DEFAULT_TIP_PERCENT;
                   return (
-                    <div key={key} className="ls-card mb-4">
-                      <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
-                        <div className="min-w-0">
-                          <span className="tag-ready inline-flex items-center gap-1.5 mb-2">
-                            <Sparkles size={11} /> Ready to claim
-                          </span>
-                          <p className="font-semibold text-black dark:text-white truncate">
-                            {c.repoUrl.replace("https://github.com/", "")}
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="hero-stat text-4xl text-black dark:text-white leading-none tracking-tight">
-                            {c.amount.toFixed(4)}
-                          </p>
-                          <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
-                        </div>
-                      </div>
+                    <ClaimCard
+                      key={key}
+                      repoUrl={c.repoUrl}
+                      amount={c.amount}
+                      defaultOpen={visibleClaimable.length + visibleClaims.length === 1}
+                      tag={
+                        <span className="tag-ready inline-flex items-center gap-1.5 mb-2">
+                          <Sparkles size={11} /> Ready to claim
+                        </span>
+                      }
+                    >
                       <div className="space-y-3">
                         <ProvenanceNote claimable={c} />
                         {renderAddressField()}
@@ -644,7 +742,7 @@ export function ClaimPanel() {
                         )}
                       </div>
                       {error[key] && <p className="text-sm text-red-600 dark:text-red-400 mt-2">{error[key]}</p>}
-                    </div>
+                    </ClaimCard>
                   );
                 })}
 
@@ -655,38 +753,59 @@ export function ClaimPanel() {
                   const addrChanged = receivingFromWallet && !sameAddress(walletAddress, c.starknetAddress);
                   const tipChanged = tip !== c.tipPercent;
                   const hasUnsavedEdits = c.status === "pending" && (addrChanged || tipChanged);
+                  // A request Aegis will no longer pay has to say so here, on
+                  // the owner's own card. Showing "pending payout" for money
+                  // that turned out to be our own drill is the one reading that
+                  // leaves someone waiting on a transfer that will never come.
+                  const unbacked = c.status === "pending" && (c.backedAmount ?? 0) < c.amount - 1e-4;
                   return (
-                    <div key={key} className="ls-card mb-4">
-                      <div className="flex flex-wrap items-start justify-between gap-4">
-                        <div className="min-w-0">
+                    <ClaimCard
+                      key={key}
+                      repoUrl={c.repoUrl}
+                      amount={c.amount}
+                      amountNote={c.status === "paid" ? "STRK claimed" : "STRK requested"}
+                      muted={unbacked}
+                      defaultOpen={visibleClaimable.length + visibleClaims.length === 1}
+                      tag={
+                        unbacked ? (
+                          <span className="tag-pending inline-flex items-center gap-1.5 mb-2">
+                            <Ban size={11} /> Not payable
+                          </span>
+                        ) : (
                           <span className={c.status === "paid" ? "tag-clean inline-flex items-center gap-1.5 mb-2" : "tag-pending inline-flex items-center gap-1.5 mb-2"}>
                             {c.status === "paid" ? <CheckCircle2 size={11} /> : <Clock3 size={11} />}
                             {c.status === "paid" ? (c.paidPrivately ? "Paid privately" : "Paid") : "Pending payout"}
                           </span>
-                          <p className="font-semibold text-black dark:text-white truncate">
-                            {c.repoUrl.replace("https://github.com/", "")}
-                          </p>
-                        </div>
-                        <div className="text-right shrink-0">
-                          <p className="hero-stat text-4xl text-black dark:text-white leading-none tracking-tight">
-                            {c.amount.toFixed(4)}
-                          </p>
-                          <p className="text-xs font-semibold text-ls-gray-400 mt-0.5">STRK</p>
-                          {c.status === "paid" && (
-                            <a
-                              href={`https://${c.network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${c.paidTxHash}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="link-arrow text-xs mt-1.5"
-                            >
-                              View tx <ExternalLink size={11} />
-                            </a>
+                        )
+                      }
+                    >
+                      {c.status === "paid" && c.paidTxHash && (
+                        <a
+                          href={`https://${c.network === "sepolia" ? "sepolia." : ""}voyager.online/tx/${c.paidTxHash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="link-arrow text-xs mb-3 inline-flex"
+                        >
+                          View tx <ExternalLink size={11} />
+                        </a>
+                      )}
+
+                      {unbacked && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mb-3">
+                          {(c.backedAmount ?? 0) > 0.0001 ? (
+                            <>Only {(c.backedAmount ?? 0).toFixed(4)} STRK of this is still backed by a proven rescue.
+                            The rest was funded by Aegis or a faucet rather than lost by anyone, so it isn&apos;t owed
+                            and won&apos;t be paid.</>
+                          ) : (
+                            <>This request isn&apos;t payable: the leak it was priced against is one Aegis planted
+                            itself, funded from its own wallet or a faucet. Sweeping it back recovered nothing anyone
+                            lost, so there is nothing to pay out.</>
                           )}
-                        </div>
-                      </div>
+                        </p>
+                      )}
 
                       {c.status === "paid" && (
-                        <div className="mt-4 rounded-xl bg-ls-gray-50 dark:bg-ls-gray-800/60 border border-ls-gray-200 dark:border-ls-gray-700 px-4 py-3 space-y-1.5">
+                        <div className="rounded-xl bg-ls-gray-50 dark:bg-ls-gray-800/60 border border-ls-gray-200 dark:border-ls-gray-700 px-4 py-3 space-y-1.5">
                           {typeof c.paidNet === "number" && (
                             <p className="text-sm text-black dark:text-white">
                               <span className="font-semibold text-emerald-600 dark:text-emerald-400">{c.paidNet.toFixed(4)} STRK</span> sent to your wallet
@@ -699,8 +818,8 @@ export function ClaimPanel() {
                         </div>
                       )}
 
-                      {c.status === "pending" && (
-                        <div className="mt-4 space-y-3">
+                      {c.status === "pending" && !unbacked && (
+                        <div className="space-y-3">
                           {renderAddressField(c.starknetAddress)}
                           <TipSlider value={tip} onChange={(v) => setTips((t) => ({ ...t, [key]: v }))} amount={c.amount} />
                           {error[key] && <p className="text-sm text-red-600 dark:text-red-400">{error[key]}</p>}
@@ -723,7 +842,7 @@ export function ClaimPanel() {
                           </div>
                         </div>
                       )}
-                    </div>
+                    </ClaimCard>
                   );
                 })}
 
