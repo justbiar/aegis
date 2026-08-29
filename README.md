@@ -77,13 +77,16 @@ have succeeded, and have moved exactly that much STRK into the safe wallet —
 and, for rescues that recorded which account they swept, have been sent by
 that account. Lines that fail are reported as unproven and are not claimable.
 
-Two things are then subtracted. The first is money that was never the owner's:
-STRK the vault itself sent a leaked account and then swept back, plus anything
-from an address declared in `NON_VICTIM_FUNDERS`. Sepolia carries 900 STRK of
-exactly this, and without netting it the vault could inflate what it owes by
-paying itself. Where the rest of the money came from doesn't decide who it
-belongs to — a faucet, an exchange, a paycheck all hand it to the wallet's
-owner, and the wallet is what the leak exposed. The second subtraction is the
+Two things are then subtracted. The first is money with no victim behind it:
+STRK the vault itself sent a leaked account and then swept back, faucet STRK,
+and anything from an address declared in `NON_VICTIM_FUNDERS`. Sepolia's test
+account was funded with 3,000 from the faucet and 900 from the vault, and none
+of it was anyone's loss — asking a faucet for test funds is not the same as
+losing your own, and money the vault sent itself would let it inflate what it
+owes by paying itself. Funds traced to these have no rightful claimant: they
+stay in the vault, they stay on the record, and no owner is offered them. A
+request left with nothing behind it disappears from both panels rather than
+sitting there as a number nobody can be paid. The second subtraction is the
 vault's own capacity: a network's total is held under what the safe wallet
 actually holds, minus what pending claims already promise; if it falls short,
 every claimant's figure shrinks by the same proportion rather than the

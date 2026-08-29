@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { rpcBalanceOf } from "@/lib/scan";
 import { SAFE_WALLET, RPC_URL, STRK_TOKEN, type Network } from "@/lib/networks";
 import { ledgerAvailable } from "@/lib/ledger";
-import { getProvenance, isSelfTestRepo, type NetworkProvenance } from "@/lib/provenance";
+import { backingForPending, claimKey, getProvenance, isSelfTestRepo, type NetworkProvenance } from "@/lib/provenance";
 import { getClaims } from "@/lib/claims";
 
 interface NetworkVaultInfo {
@@ -37,15 +37,21 @@ interface NetworkVaultInfo {
 async function vaultInfo(
   network: Network,
   provenance: NetworkProvenance,
-  claims: Awaited<ReturnType<typeof getClaims>>
+  claims: Awaited<ReturnType<typeof getClaims>>,
+  backed: Map<string, number>,
 ): Promise<NetworkVaultInfo> {
   const address = SAFE_WALLET[network];
   const proofs = provenance.repos.flatMap((r) => r.proofs);
 
-  // Drills are excluded here too — a request nobody can see or act on should
-  // not sit in the banner as STRK someone is waiting for.
+  // Only requests the vault could actually pay count as "requested". One left
+  // with nothing behind it is a claim on ownerless money — it stays on the
+  // record but it isn't STRK anyone is waiting for.
   const pending = claims.filter(
-    (c) => c.network === network && c.status === "pending" && !isSelfTestRepo(c.repoUrl),
+    (c) =>
+      c.network === network &&
+      c.status === "pending" &&
+      !isSelfTestRepo(c.repoUrl) &&
+      (backed.get(claimKey(c)) ?? 0) > 1e-4,
   );
 
   const base = {
@@ -73,9 +79,10 @@ async function vaultInfo(
 
 export async function GET() {
   const [provenance, claims] = await Promise.all([getProvenance(), getClaims()]);
+  const backed = backingForPending(claims, provenance);
   const [mainnet, sepolia] = await Promise.all([
-    vaultInfo("mainnet", provenance.mainnet, claims),
-    vaultInfo("sepolia", provenance.sepolia, claims),
+    vaultInfo("mainnet", provenance.mainnet, claims, backed),
+    vaultInfo("sepolia", provenance.sepolia, claims, backed),
   ]);
   return NextResponse.json({ mainnet, sepolia, ledgerAvailable });
 }

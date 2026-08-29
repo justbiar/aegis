@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/auth";
 import { getClaims, recordClaimRequest, updatePendingClaim, type ClaimRecord } from "@/lib/claims";
-import { getProvenance, isSelfTestRepo, type NetworkProvenance, type RescueProof } from "@/lib/provenance";
+import {
+  backingForPending,
+  claimKey,
+  getProvenance,
+  isSelfTestRepo,
+  type NetworkProvenance,
+  type RescueProof,
+} from "@/lib/provenance";
 import { rpcBalanceOf } from "@/lib/scan";
 import { NETWORKS, SAFE_WALLET, STRK_TOKEN, type Network } from "@/lib/networks";
 
@@ -119,44 +126,6 @@ async function claimableRows(
   return rows.filter((r) => r.amount > 1e-4);
 }
 
-function claimKey(c: ClaimRecord): string {
-  return `${c.repoUrl}::${c.network}::${c.requestedAt}`;
-}
-
-// How much of each pending claim the chain still backs. Settled claims are
-// served first out of a repo's attributable total — they already took their
-// money — and what's left covers the pending ones in the order they were
-// filed. A claim can come back partly backed, or not at all.
-function backingForPending(
-  claims: ClaimRecord[],
-  provenance: Record<Network, NetworkProvenance>,
-): Map<string, number> {
-  const backed = new Map<string, number>();
-
-  for (const network of NETWORKS) {
-    for (const repo of provenance[network].repos) {
-      const mine = claims.filter((c) => c.repoUrl === repo.repoUrl && c.network === network);
-      const settled = mine.filter((c) => c.status !== "pending").reduce((sum, c) => sum + c.amount, 0);
-      let left = Math.max(0, repo.attributable - settled);
-
-      for (const claim of mine.filter((c) => c.status === "pending").sort((a, b) => a.requestedAt - b.requestedAt)) {
-        const covered = Math.min(claim.amount, left);
-        backed.set(claimKey(claim), covered);
-        left -= covered;
-      }
-    }
-  }
-
-  // A pending claim on a repo with no provenance at all never enters the loop
-  // above, and absence of an entry has to mean "nothing backs this" rather
-  // than "unknown" — otherwise the queue would pay it by default.
-  for (const claim of claims) {
-    if (claim.status !== "pending") continue;
-    if (!backed.has(claimKey(claim))) backed.set(claimKey(claim), 0);
-  }
-  return backed;
-}
-
 // GET ?scope=mine (default) — the signed-in user's own claimable rescues
 // (what the chain proves was rescued out of repos they own, minus anything
 // already claimed and minus anything the vault sent back) plus their existing
@@ -185,7 +154,11 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       claims: claims
         .filter((c) => c.status === "pending" && !isSelfTestRepo(c.repoUrl))
-        .map((c) => ({ ...c, backedAmount: backed.get(claimKey(c)) ?? 0 })),
+        .map((c) => ({ ...c, backedAmount: backed.get(claimKey(c)) ?? 0 }))
+        // A request backed by nothing is a request against ownerless money.
+        // It stays in the store, but the queue doesn't carry it: there is no
+        // amount anyone could be paid and nothing for the operator to decide.
+        .filter((c) => c.backedAmount > 1e-4),
     });
   }
 
@@ -197,9 +170,7 @@ export async function GET(req: NextRequest) {
   // payout happened, on-chain, and hiding it makes the page report "paid: 0"
   // for STRK that demonstrably moved.
   const myClaims = claims.filter(
-    (c) =>
-      c.githubLogin.toLowerCase() === login.toLowerCase() &&
-      !(c.status === "pending" && isSelfTestRepo(c.repoUrl)),
+    (c) => c.githubLogin.toLowerCase() === login.toLowerCase() && !(c.status === "pending" && isSelfTestRepo(c.repoUrl)),
   );
 
   // Rows are computed for every repo and then filtered to this owner: the
@@ -225,9 +196,12 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     drills,
     claimable,
-    claims: myClaims.map((c) =>
-      c.status === "pending" ? { ...c, backedAmount: backed.get(claimKey(c)) ?? 0 } : c,
-    ),
+    claims: myClaims
+      .map((c) => ({ ...c, backedAmount: c.status === "pending" ? backed.get(claimKey(c)) ?? 0 : c.amount }))
+      // Pending requests with nothing behind them don't surface at all: the
+      // money they were priced against has no owner, so there is nobody to
+      // show them to. Settled claims stay — those payouts happened.
+      .filter((c) => c.status !== "pending" || (c.backedAmount ?? 0) > 1e-4),
   });
 }
 

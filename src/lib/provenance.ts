@@ -17,7 +17,7 @@
 // `attributable`: funds in the vault traceable to a leak in a specific GitHub
 // repo. Only that is claimable.
 
-import { RPC_URL, SAFE_WALLET, STRK_TOKEN, type Network } from "./networks";
+import { NETWORKS, RPC_URL, SAFE_WALLET, STRK_TOKEN, type Network } from "./networks";
 import { getLedger, type RescueRecord } from "./ledger";
 
 const KV_URL = process.env.KV_REST_API_URL;
@@ -36,15 +36,14 @@ const AMOUNT_TOLERANCE = 1e-9;
 // On-chain the two are identical — a victim topping up a wallet whose key
 // leaked looks exactly like us topping up a test one — so the only way Aegis
 // can tell them apart is to know its own addresses.
-// Deliberately empty. A faucet was in here, and it was the wrong call: the
-// faucet hands STRK to the wallet's owner, so that money is theirs like any
-// other. Where it came from doesn't decide who it belongs to — the leaked
-// wallet does. What still belongs here is money that was never anyone's but
-// Aegis's, which is why the safe wallet stays in the list below: STRK the
-// vault sends a leaked account and then sweeps back was never the owner's,
-// and counting it would let the vault inflate what it owes by paying itself.
+// Sources with no victim behind them. Faucet STRK belongs to nobody in
+// particular — asking a faucet for test funds is not the same as losing your
+// own — and STRK the vault sent a leaked account and swept back was never the
+// owner's either. Money traced to these has no rightful claimant: it stays in
+// the vault, it stays on the record, and no owner is ever offered it.
 const KNOWN_FAUCETS: Record<Network, string[]> = {
-  sepolia: [],
+  // Sepolia STRK faucet, identified from the 3,000 STRK it sent the test leak.
+  sepolia: ["0x00606724f531419f4c8fd1d28d898bc05e1d42be9cec8bfcf202b76f2241a26c"],
   mainnet: [],
 };
 
@@ -480,6 +479,45 @@ const CACHE_TTL_S = 120;
 const MEMO_TTL_MS = 60_000;
 
 let memo: { at: number; value: Record<Network, NetworkProvenance> } | null = null;
+
+// How much of each pending claim the chain still backs. Settled claims are
+// served first out of a repo's attributable total — they already took their
+// money — and what's left covers the pending ones in the order they were
+// filed. A claim can come back partly backed, or not at all; one backed by
+// nothing is a request against ownerless money and is treated as if it were
+// never filed.
+export function claimKey(c: { repoUrl: string; network: Network; requestedAt: number }): string {
+  return `${c.repoUrl}::${c.network}::${c.requestedAt}`;
+}
+
+export function backingForPending(
+  claims: { repoUrl: string; network: Network; requestedAt: number; amount: number; status: string }[],
+  provenance: Record<Network, NetworkProvenance>,
+): Map<string, number> {
+  const backed = new Map<string, number>();
+
+  for (const network of NETWORKS) {
+    for (const repo of provenance[network].repos) {
+      const mine = claims.filter((c) => c.repoUrl === repo.repoUrl && c.network === network);
+      const settled = mine.filter((c) => c.status !== "pending").reduce((sum, c) => sum + c.amount, 0);
+      let left = Math.max(0, repo.attributable - settled);
+
+      for (const claim of mine.filter((c) => c.status === "pending").sort((a, b) => a.requestedAt - b.requestedAt)) {
+        const covered = Math.min(claim.amount, left);
+        backed.set(claimKey(claim), covered);
+        left -= covered;
+      }
+    }
+  }
+
+  // A pending claim on a repo with no provenance at all never enters the loop
+  // above, and absence has to mean "nothing backs this" rather than "unknown".
+  for (const claim of claims) {
+    if (claim.status !== "pending") continue;
+    if (!backed.has(claimKey(claim))) backed.set(claimKey(claim), 0);
+  }
+  return backed;
+}
 
 export async function getProvenance(): Promise<Record<Network, NetworkProvenance>> {
   if (memo && Date.now() - memo.at < MEMO_TTL_MS) return memo.value;
