@@ -17,7 +17,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 350
     steps:
       - name: Continuously trigger the registry scan
         env:
@@ -35,8 +35,14 @@ jobs:
           # 6 x 15s = the 90s above; keep them consistent when tuning.
           HOT_SLEEP: "15"
           HOT_PER_CYCLE: "6"
-          # Loop for ~50 min, then the queued scheduled run takes over.
-          RUN_FOR: "3000"
+          # Loop for ~5h45m, just inside the 6-hour ceiling on a job, then the
+          # queued scheduled run takes over. This used to be 50 minutes on the
+          # assumption that the */5 heartbeat would restart it promptly. It does
+          # not: real starts land 11-18 hours apart, so a 50-minute loop left the
+          # scanner up about 6% of the day and a leak funded in the gap sat there
+          # until someone loaded the site. Minutes are free on a public repo, so
+          # the loop runs as long as one job is allowed to.
+          RUN_FOR: "20700"
         run: |
           end=$((SECONDS + RUN_FOR))
           while [ "$SECONDS" -lt "$end" ]; do
