@@ -55,6 +55,21 @@ flowchart LR
 
 No human in the loop between detection and rescue. Two GitHub Actions loops keep it running whether or not anyone is looking at the site: the registry scan every ~90 seconds, and the ecosystem sweep plus pull-request pass on a deliberately unhurried ~10 minute cycle. The pace is set by the real ceilings — GitHub's search quota and the RPC budget — not by a guess.
 
+Keeping those loops *started* turned out to be the harder half. A `schedule:`
+trigger is best-effort, and it degrades: starts here ran about 15 minutes apart
+until it quietly stretched to 11–18 hours, which left the scanner up roughly 6%
+of the day. Anything funded in a gap simply waited. Two things close it. Each
+run now loops for 5h45m rather than 50 minutes, just inside the ceiling on a
+single job — free on a public repository, and bounded by the same `SLEEP` that
+governs RPC spend. And when a run ends it starts the next one itself, which
+needs a personal access token: a `workflow_dispatch` authenticated with the
+built-in `GITHUB_TOKEN` deliberately does not start a new run, so a workflow
+cannot trigger itself by accident. Add a fine-grained token with Actions
+read/write as the `LOOP_PAT` secret and the chain is continuous; without it the
+step is a no-op and the schedule stays the only trigger. Any external cron that
+can hit `/api/scan-registry` works just as well and depends on nothing GitHub
+decides.
+
 Anyone can also point it at a single repository from the site itself. That path is detect-only: it reports what it finds and puts the repository in the sweep queue, so a visitor who spots a funded leak gets it handled without the endpoint becoming a way to make the server spend money on request.
 
 **Findings are masked.** The live console shows a hit as `b***/a****`, never the real name. Finding an exposed key on testnet almost always means the same key is exposed on mainnet, so publishing the repository name would hand an attacker the exact thing this project exists to prevent. The unmasked URL is kept server-side, where ownership verification needs it, and never reaches a page or an epoch record.

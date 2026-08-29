@@ -35,13 +35,13 @@ jobs:
           # 6 x 15s = the 90s above; keep them consistent when tuning.
           HOT_SLEEP: "15"
           HOT_PER_CYCLE: "6"
-          # Loop for ~5h45m, just inside the 6-hour ceiling on a job, then the
-          # queued scheduled run takes over. This used to be 50 minutes on the
-          # assumption that the */5 heartbeat would restart it promptly. It does
-          # not: real starts land 11-18 hours apart, so a 50-minute loop left the
-          # scanner up about 6% of the day and a leak funded in the gap sat there
-          # until someone loaded the site. Minutes are free on a public repo, so
-          # the loop runs as long as one job is allowed to.
+          # Loop for ~5h45m, just inside the 6-hour ceiling on a job. This used
+          # to be 50 minutes on the assumption that the */5 heartbeat restarts it
+          # promptly. It does not: starts were ~15 minutes apart until 26 Aug and
+          # then 11-18 hours apart, which left the scanner up about 6% of the day
+          # and a leak funded in the gap sitting there until someone loaded the
+          # site. Minutes are free on a public repo, so the loop runs as long as
+          # one job is allowed to, and the handoff step below closes the rest.
           RUN_FOR: "20700"
         run: |
           end=$((SECONDS + RUN_FOR))
@@ -62,3 +62,32 @@ jobs:
               h=$((h + 1))
             done
           done
+
+      # GitHub's scheduler is the weak link, not the loop: `schedule` is
+      # best-effort and gets deprioritised, so waiting for it leaves hours where
+      # nothing is watching. A run that ends starts the next one itself, which
+      # makes the chain continuous rather than dependent on when GitHub feels
+      # like firing. This needs a PAT: a workflow_dispatch authenticated with
+      # the built-in GITHUB_TOKEN deliberately does not start a new run, so that
+      # a workflow cannot trigger itself by accident.
+      #
+      # Optional. Without the secret this step does nothing and the schedule
+      # remains the only trigger — the loop still runs, just with gaps.
+      # To enable: create a fine-grained PAT scoped to this repository with
+      # Actions: read and write, then add it as the LOOP_PAT secret.
+      - name: Start the next run
+        if: always()
+        env:
+          LOOP_PAT: ${{ secrets.LOOP_PAT }}
+        run: |
+          if [ -z "$LOOP_PAT" ]; then
+            echo "No LOOP_PAT secret set — leaving the next start to GitHub's schedule."
+            exit 0
+          fi
+          curl -sf -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $LOOP_PAT" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/workflows/scan.yml/dispatches" \
+            -d '{"ref":"${{ github.ref_name }}"}' \
+            && echo "next run dispatched" \
+            || echo "dispatch failed — the schedule is still the fallback"
