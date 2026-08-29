@@ -35,7 +35,7 @@ interface NetworkVaultInfo {
   rescuedCount: number;
   unverifiedTotal: number;
   unverifiedCount: number;
-  refundedTotal: number;
+  selfFundedTotal: number;
   attributableTotal: number;
   unattributedBalance: number | null;
   requestedTotal: number;
@@ -66,7 +66,7 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
   // someone, not swept out of a leak, so it belongs to nobody's claim.
   const unattributed = info?.unattributedBalance ?? null;
   const unverifiedCount = info?.unverifiedCount ?? 0;
-  const refundedTotal = info?.refundedTotal ?? 0;
+  const selfFundedTotal = info?.selfFundedTotal ?? 0;
 
   const animatedBalance = useCountUp(balance ?? 0);
   const animatedRescued = useCountUp(totalRescued);
@@ -157,8 +157,8 @@ function VaultRow({ network, info, ledgerAvailable, liveCount, liveTotal, compac
             <p
               className="text-xs font-medium text-ls-gray-500 dark:text-ls-gray-400 mt-0.5"
               title={
-                refundedTotal > 0
-                  ? `Net of ${refundedTotal.toFixed(2)} STRK the vault sent back to leaked accounts and rescued again`
+                selfFundedTotal > 0
+                  ? `Net of ${selfFundedTotal.toFixed(2)} STRK that reached those accounts from Aegis or a faucet rather than from a victim`
                   : undefined
               }
             >

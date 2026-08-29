@@ -30,11 +30,32 @@ const TRANSFER_KEY = "0x99cd8bde557814842a3121e8ddfd433a539b8c9f14bf31ebf108d12e
 // should match to the bit — this only absorbs float noise, not a real gap.
 const AMOUNT_TOLERANCE = 1e-9;
 
-// How far before the first known rescue to look for vault → account refunds.
-// A refund only matters if the bot later swept it back, so the window that
+// Addresses whose money was never a victim's. A leak funded from one of these
+// is a drill: the STRK came from Aegis itself, or from a faucet that hands it
+// out for free, so sweeping it recovered nothing and nobody is owed it back.
+// On-chain the two are identical — a victim topping up a wallet whose key
+// leaked looks exactly like us topping up a test one — so the only way Aegis
+// can tell them apart is to know its own addresses.
+const KNOWN_FAUCETS: Record<Network, string[]> = {
+  // Sepolia STRK faucet, identified from the 3,000 STRK it sent the test leak.
+  sepolia: ["0x00606724f531419f4c8fd1d28d898bc05e1d42be9cec8bfcf202b76f2241a26c"],
+  mainnet: [],
+};
+
+function nonVictimFunders(network: Network): string[] {
+  const configured = (process.env.NON_VICTIM_FUNDERS ?? "")
+    .split(",")
+    .map((a) => a.trim())
+    .filter(Boolean);
+  const safe = SAFE_WALLET[network];
+  return [...(safe ? [safe] : []), ...KNOWN_FAUCETS[network], ...configured];
+}
+
+// How far before the first known rescue to look for non-victim funding.
+// Such funding only matters if the bot later swept it back, so the window that
 // counts starts around the first sweep; the margin covers funding sent shortly
 // before it. Sepolia runs ~50k blocks/day, so this is a few days of slack.
-const REFUND_LOOKBACK_MARGIN = 200_000;
+const FUNDING_LOOKBACK_MARGIN = 200_000;
 
 // What the chain says about one rescue tx, cached under its hash. Only facts
 // live here, never a verdict: a mined tx never changes its mind, but whether
@@ -73,9 +94,9 @@ export interface RepoProvenance {
   verified: number;
   /** Ledger amounts whose tx could not be proven — never claimable. */
   unverified: number;
-  /** STRK the vault sent back to this repo's leaked accounts. */
-  refunded: number;
-  /** verified − refunded, floored at 0. The only claimable figure. */
+  /** STRK that reached this repo's leaked accounts from Aegis or a faucet. */
+  selfFunded: number;
+  /** verified − selfFunded, floored at 0. The only claimable figure. */
   attributable: number;
   proofs: RescueProof[];
 }
@@ -85,7 +106,7 @@ export interface NetworkProvenance {
   partial: boolean;
   verified: number;
   unverified: number;
-  refunded: number;
+  selfFunded: number;
   attributable: number;
   repos: RepoProvenance[];
 }
@@ -285,17 +306,18 @@ async function verifyRecord(record: RescueRecord, cached: Map<string, string>): 
   return { ...seen, verified: true };
 }
 
-// Every STRK the safe wallet has sent out since it started rescuing, with the
-// block each transfer landed in. Only outflows to a rescued account matter
-// here; the rest — shielding into the privacy pool, paying a claim — are the
-// vault doing its job, not money going back around the loop.
-async function outgoingTransfers(
+// Every STRK that left an address whose money isn't a victim's — the vault
+// itself, a faucet, any address the operator has declared — with the block it
+// landed in. Only the ones that landed on an account Aegis later swept matter;
+// the rest (shielding into the privacy pool, paying out a claim, ordinary
+// faucet traffic to strangers) has nothing to do with what's claimable.
+async function nonVictimTransfers(
   network: Network,
   fromBlock: number,
 ): Promise<{ transfers: { to: string; amount: number; block: number }[]; complete: boolean }> {
-  const safe = SAFE_WALLET[network];
+  const funders = nonVictimFunders(network);
   const transfers: { to: string; amount: number; block: number }[] = [];
-  if (!safe) return { transfers, complete: false };
+  if (funders.length === 0) return { transfers, complete: false };
   let complete = true;
 
   let continuationToken: string | undefined;
@@ -309,7 +331,7 @@ async function outgoingTransfers(
           from_block: { block_number: Math.max(0, fromBlock) },
           to_block: "latest",
           address: STRK_TOKEN,
-          keys: [[TRANSFER_KEY], [safe]],
+          keys: [[TRANSFER_KEY], funders],
           chunk_size: 1000,
           ...(continuationToken ? { continuation_token: continuationToken } : {}),
         },
@@ -331,8 +353,8 @@ async function outgoingTransfers(
     pages++;
   } while (continuationToken && pages < 40);
 
-  // Stopping early leaves refunds unaccounted for, which would overstate what
-  // is claimable — the one direction that must never be guessed at.
+  // Stopping early leaves non-victim funding unaccounted for, which would
+  // overstate what is claimable — the one direction never to guess at.
   if (continuationToken) complete = false;
   return { transfers, complete };
 }
@@ -347,14 +369,14 @@ async function buildNetwork(
 
   const blocks = proofs.filter((p) => p.verified && p.blockNumber !== null).map((p) => p.blockNumber as number);
   const scan = blocks.length > 0
-    ? await outgoingTransfers(network, Math.min(...blocks) - REFUND_LOOKBACK_MARGIN)
+    ? await nonVictimTransfers(network, Math.min(...blocks) - FUNDING_LOOKBACK_MARGIN)
     : { transfers: [], complete: true };
 
   // The last block on which each account was swept. Money the vault sent an
   // account after that is still sitting there — it hasn't been rescued a second
   // time, so it hasn't been counted a second time and there's nothing to
   // subtract yet. This is also what keeps a payout to an owner who reuses the
-  // compromised wallet from being mistaken for a refund.
+  // compromised wallet from being mistaken for its funding.
   const lastSweep = new Map<string, number>();
   for (const proof of proofs) {
     if (!proof.verified || !proof.accountAddress || proof.blockNumber === null) continue;
@@ -362,13 +384,13 @@ async function buildNetwork(
     lastSweep.set(key, Math.max(lastSweep.get(key) ?? 0, proof.blockNumber));
   }
 
-  const refunds = new Map<string, number>();
+  const selfFunding = new Map<string, number>();
   for (const transfer of scan.transfers) {
     const swept = lastSweep.get(transfer.to);
     if (swept === undefined || transfer.block > swept) continue;
-    refunds.set(transfer.to, (refunds.get(transfer.to) ?? 0) + transfer.amount);
+    selfFunding.set(transfer.to, (selfFunding.get(transfer.to) ?? 0) + transfer.amount);
   }
-  // Anything unread — a receipt we couldn't fetch, a refund scan that stopped
+  // Anything unread — a receipt we couldn't fetch, a funding scan that stopped
   // short — means the picture is incomplete, so nothing here is offered up as
   // claimable until it can be read properly. It self-heals on the next request,
   // since a partial answer is never cached.
@@ -382,7 +404,7 @@ async function buildNetwork(
   }
 
   // An account belongs to one repo — whichever repo's proofs name it first, in
-  // a stable order — so a refund can never be subtracted twice.
+  // a stable order — so funding can never be subtracted twice.
   const claimedAccounts = new Set<string>();
   const repos: RepoProvenance[] = [];
   for (const repoUrl of [...byRepo.keys()].sort()) {
@@ -390,13 +412,13 @@ async function buildNetwork(
     const verified = repoProofs.filter((p) => p.verified).reduce((sum, p) => sum + p.amount, 0);
     const unverified = repoProofs.filter((p) => !p.verified).reduce((sum, p) => sum + p.amount, 0);
 
-    let refunded = 0;
+    let selfFunded = 0;
     for (const proof of repoProofs) {
       if (!proof.verified || !proof.accountAddress) continue;
       const key = addressKey(proof.accountAddress);
       if (claimedAccounts.has(key)) continue;
       claimedAccounts.add(key);
-      refunded += refunds.get(key) ?? 0;
+      selfFunded += selfFunding.get(key) ?? 0;
     }
 
     repos.push({
@@ -404,8 +426,8 @@ async function buildNetwork(
       network,
       verified,
       unverified,
-      refunded,
-      attributable: partial ? 0 : Math.max(0, verified - refunded),
+      selfFunded,
+      attributable: partial ? 0 : Math.max(0, verified - selfFunded),
       proofs: repoProofs,
     });
   }
@@ -415,7 +437,7 @@ async function buildNetwork(
     partial,
     verified: sum((r) => r.verified),
     unverified: sum((r) => r.unverified),
-    refunded: sum((r) => r.refunded),
+    selfFunded: sum((r) => r.selfFunded),
     attributable: sum((r) => r.attributable),
     repos,
   };

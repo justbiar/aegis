@@ -38,8 +38,8 @@ interface ClaimableRow {
   verified: number;
   /** Ledger entries that could not be proven — excluded from `amount`. */
   unverified: number;
-  /** STRK the vault sent back to this repo's leaked accounts — excluded too. */
-  refunded: number;
+  /** STRK that came from Aegis or a faucet, not a victim — excluded too. */
+  selfFunded: number;
   /** True when the vault simply doesn't hold enough to back the full amount. */
   cappedByBalance: boolean;
   proofs: { txHash: string; amount: number; accountAddress: string | null; verified: boolean }[];
@@ -80,7 +80,7 @@ async function claimableRows(
         amount: remaining,
         verified: repo.verified,
         unverified: repo.unverified,
-        refunded: repo.refunded,
+        selfFunded: repo.selfFunded,
         cappedByBalance: false,
         proofs: repo.proofs.map((p: RescueProof) => ({
           txHash: p.txHash,
@@ -119,6 +119,44 @@ async function claimableRows(
   return rows.filter((r) => r.amount > 1e-4);
 }
 
+function claimKey(c: ClaimRecord): string {
+  return `${c.repoUrl}::${c.network}::${c.requestedAt}`;
+}
+
+// How much of each pending claim the chain still backs. Settled claims are
+// served first out of a repo's attributable total — they already took their
+// money — and what's left covers the pending ones in the order they were
+// filed. A claim can come back partly backed, or not at all.
+function backingForPending(
+  claims: ClaimRecord[],
+  provenance: Record<Network, NetworkProvenance>,
+): Map<string, number> {
+  const backed = new Map<string, number>();
+
+  for (const network of NETWORKS) {
+    for (const repo of provenance[network].repos) {
+      const mine = claims.filter((c) => c.repoUrl === repo.repoUrl && c.network === network);
+      const settled = mine.filter((c) => c.status !== "pending").reduce((sum, c) => sum + c.amount, 0);
+      let left = Math.max(0, repo.attributable - settled);
+
+      for (const claim of mine.filter((c) => c.status === "pending").sort((a, b) => a.requestedAt - b.requestedAt)) {
+        const covered = Math.min(claim.amount, left);
+        backed.set(claimKey(claim), covered);
+        left -= covered;
+      }
+    }
+  }
+
+  // A pending claim on a repo with no provenance at all never enters the loop
+  // above, and absence of an entry has to mean "nothing backs this" rather
+  // than "unknown" — otherwise the queue would pay it by default.
+  for (const claim of claims) {
+    if (claim.status !== "pending") continue;
+    if (!backed.has(claimKey(claim))) backed.set(claimKey(claim), 0);
+  }
+  return backed;
+}
+
 // GET ?scope=mine (default) — the signed-in user's own claimable rescues
 // (what the chain proves was rescued out of repos they own, minus anything
 // already claimed and minus anything the vault sent back) plus their existing
@@ -137,7 +175,18 @@ export async function GET(req: NextRequest) {
     if (!login || login.toLowerCase() !== ADMIN_LOGIN) {
       return NextResponse.json({ error: "Operator only" }, { status: 403 });
     }
-    return NextResponse.json({ claims: claims.filter((c) => c.status === "pending") });
+    // A claim is priced when it's filed and then sits there, sometimes for
+    // days. What backs it can shrink in the meantime — a rescue can turn out
+    // to be self-funded, a proof can stop holding — so the queue re-checks
+    // every pending claim against the chain as it stands now. Paying one that
+    // is no longer backed would be handing out money nobody is owed.
+    const provenance = await getProvenance();
+    const backed = backingForPending(claims, provenance);
+    return NextResponse.json({
+      claims: claims
+        .filter((c) => c.status === "pending")
+        .map((c) => ({ ...c, backedAmount: backed.get(claimKey(c)) ?? 0 })),
+    });
   }
 
   if (!login) return NextResponse.json({ claimable: [], claims: [] });

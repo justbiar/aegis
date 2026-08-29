@@ -56,8 +56,8 @@ interface Claimable {
   verified: number;
   /** Ledger lines with no usable proof — left out of `amount`. */
   unverified: number;
-  /** STRK the vault sent back to the leaked account and swept again. */
-  refunded: number;
+  /** STRK that reached the leaked account from Aegis or a faucet. */
+  selfFunded: number;
   /** The vault doesn't currently hold enough to back the full amount. */
   cappedByBalance: boolean;
   proofs: RescueProof[];
@@ -74,6 +74,8 @@ interface Claim {
   paidTxHash?: string;
   paidPrivately?: boolean;
   paidNet?: number;
+  /** Operator queue only: how much of this claim the chain still backs. */
+  backedAmount?: number;
 }
 
 // Where a claimable figure comes from: the repo the key leaked in, the rescue
@@ -116,12 +118,12 @@ function ProvenanceNote({ claimable }: { claimable: Claimable }) {
           <li className="text-xs text-ls-gray-400">+ {proven.length - 4} more</li>
         )}
       </ul>
-      {(claimable.refunded > 0.0001 || claimable.unverified > 0.0001 || claimable.cappedByBalance) && (
+      {(claimable.selfFunded > 0.0001 || claimable.unverified > 0.0001 || claimable.cappedByBalance) && (
         <ul className="mt-2.5 pt-2.5 border-t border-ls-gray-200 dark:border-ls-gray-700 space-y-1 text-xs text-ls-gray-500 dark:text-ls-gray-400">
-          {claimable.refunded > 0.0001 && (
+          {claimable.selfFunded > 0.0001 && (
             <li>
-              −{claimable.refunded.toFixed(4)} STRK the vault sent back to that account and rescued again — the same
-              money, so it is only claimable once.
+              −{claimable.selfFunded.toFixed(4)} STRK reached that account from Aegis&apos;s own wallet or a faucet, not
+              from a victim — sweeping it back recovered nothing, so it is not claimable.
             </li>
           )}
           {claimable.unverified > 0.0001 && (
@@ -436,7 +438,12 @@ export function ClaimPanel() {
   // ── ADMIN PANEL ────────────────────────────────────────────────────────
   if (status === "authenticated" && isAdmin) {
     const adminForNet = adminPending.filter((c) => c.network === selectedNetwork);
-    const batchClaims: BatchClaim[] = adminForNet.map((c) => ({
+    // A request whose funds are no longer accounted for doesn't go in the
+    // batch. It stays visible with the reason — the operator should see that
+    // it was filed, and see why Aegis won't pay it.
+    const isBacked = (c: Claim) => (c.backedAmount ?? 0) >= c.amount - 1e-4;
+    const unbacked = adminForNet.filter((c) => !isBacked(c));
+    const batchClaims: BatchClaim[] = adminForNet.filter(isBacked).map((c) => ({
       repoUrl: c.repoUrl,
       network: c.network,
       amount: c.amount,
@@ -461,16 +468,50 @@ export function ClaimPanel() {
             </p>
           ) : (
             <>
+              {batchClaims.length > 0 && (
               <div className="ls-card mb-4 border-emerald-200 dark:border-emerald-800/60">
                 <p className="text-xs font-bold uppercase tracking-widest text-ls-gray-400 mb-1">
                   Batch payout · <span className="capitalize">{selectedNetwork}</span>
                 </p>
                 <p className="text-sm text-ls-gray-600 dark:text-ls-gray-300 mb-3">
-                  {adminForNet.length} pending {adminForNet.length === 1 ? "request" : "requests"} — one private transaction,
-                  one pool fee shared across them.
+                  {batchClaims.length} payable {batchClaims.length === 1 ? "request" : "requests"} — one private
+                  transaction, one pool fee shared across them.
+                  {unbacked.length > 0 && (
+                    <> {unbacked.length} more {unbacked.length === 1 ? "is" : "are"} held back below.</>
+                  )}
                 </p>
                 <PayClaimsBatch claims={batchClaims} network={selectedNetwork} onPaid={loadPending} />
               </div>
+              )}
+
+              {unbacked.map((c) => (
+                <div key={`${c.repoUrl}::${c.network}::unbacked`} className="ls-card mb-3 border-amber-300 dark:border-amber-800/60">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <span className="tag-pending inline-flex items-center gap-1.5 mb-2">
+                        <Clock3 size={11} /> Not payable
+                      </span>
+                      <p className="font-semibold text-black dark:text-white truncate">
+                        {c.repoUrl.replace("https://github.com/", "")}
+                      </p>
+                      {c.githubLogin && <p className="text-xs text-ls-gray-400">@{c.githubLogin}</p>}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="hero-stat text-2xl text-ls-gray-400 leading-none tracking-tight">{c.amount.toFixed(4)}</p>
+                      <p className="text-[11px] font-semibold text-ls-gray-400 mt-0.5">STRK requested</p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400 mt-3">
+                    {(c.backedAmount ?? 0) > 0.0001 ? (
+                      <>Only {(c.backedAmount ?? 0).toFixed(4)} STRK of this is still backed by proven rescues — the rest
+                      was funded by Aegis or a faucet rather than lost by a victim, so it isn&apos;t owed.</>
+                    ) : (
+                      <>Nothing backs this request any more: the funds it was priced against came from Aegis&apos;s own
+                      wallet or a faucet, not from a victim, so sweeping them recovered nothing.</>
+                    )}
+                  </p>
+                </div>
+              ))}
 
               {payouts.map((r) => {
                 const c = r.claim;

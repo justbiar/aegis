@@ -15,13 +15,13 @@ interface NetworkVaultInfo {
   rescuedCount: number;
   unverifiedTotal: number;
   unverifiedCount: number;
-  // STRK the vault sent back out to leaked accounts (re-testing a sweep), which
-  // the bot then rescued again. Subtracted so the same money isn't counted
-  // twice.
-  refundedTotal: number;
-  // rescuedTotal − refundedTotal: funds here that trace back to a leak in a
-  // known repo. Everything else in the balance arrived from somewhere Aegis
-  // can't account for and is nobody's to claim.
+  // STRK that reached the leaked accounts from Aegis's own wallet or a faucet
+  // rather than from a victim. Sweeping it back recovered nothing, so it is
+  // subtracted rather than counted as a rescue.
+  selfFundedTotal: number;
+  // rescuedTotal − selfFundedTotal: funds here that trace back to a real leak
+  // in a known repo. Everything else in the balance arrived from somewhere
+  // Aegis can't account for and is nobody's to claim.
   attributableTotal: number;
   unattributedBalance: number | null;
   // How much verified owners have requested back that hasn't been paid out yet
@@ -46,7 +46,7 @@ async function vaultInfo(
     rescuedCount: proofs.filter((p) => p.verified).length,
     unverifiedTotal: provenance.unverified,
     unverifiedCount: proofs.filter((p) => !p.verified).length,
-    refundedTotal: provenance.refunded,
+    selfFundedTotal: provenance.selfFunded,
     attributableTotal: provenance.attributable,
     requestedTotal: pending.reduce((sum, c) => sum + c.amount, 0),
     requestedCount: pending.length,
