@@ -33,6 +33,13 @@ export interface ClaimRecord {
   // claim's share of the pool fee). Stored so the paid card can show what the
   // owner really received, not just the gross rescued amount.
   paidNet?: number;
+  // Set the instant a payout transaction is signed and broadcast, long before
+  // it confirms. A private pool transfer takes minutes to verify its proof, and
+  // the claim stays "pending" for all of it — without this marker the payout
+  // queue keeps offering the same claim, and paying it again sends the STRK a
+  // second time. Cleared only if that transaction turns out not to have landed.
+  payoutTxHash?: string;
+  payoutAt?: number;
   // % of `amount` withheld at payout time (stays with the safe wallet) —
   // covers the network fee the payout itself costs to send, and doubles as
   // an opt-in "support the project" amount above that. Chosen by the
@@ -118,6 +125,50 @@ export async function updatePendingClaim(
   claim.starknetAddress = updates.starknetAddress;
   claim.tipPercent = updates.tipPercent;
   if (typeof updates.amount === "number" && updates.amount > 0) claim.amount = updates.amount;
+  await saveClaims(claims);
+  return true;
+}
+
+// A claim's identity in the store. repoUrl + network isn't enough on its own —
+// a repo that leaks again is rescued and claimed again — so the filing time
+// pins down which record is meant.
+function isClaim(c: ClaimRecord, repoUrl: string, network: Network, requestedAt?: number): boolean {
+  if (c.repoUrl !== repoUrl || c.network !== network) return false;
+  return typeof requestedAt === "number" ? c.requestedAt === requestedAt : c.status === "pending";
+}
+
+export interface ClaimRef {
+  repoUrl: string;
+  network: Network;
+  requestedAt?: number;
+}
+
+// Records that a payout transaction is out for these claims. Written as one
+// read-modify-write for the whole batch: the store is a single list, so marking
+// each claim in its own request would have them overwrite each other.
+export async function markPayoutSubmitted(refs: ClaimRef[], payoutTxHash: string): Promise<number> {
+  const claims = await getClaims();
+  let marked = 0;
+  for (const ref of refs) {
+    const claim = claims.find((c) => isClaim(c, ref.repoUrl, ref.network, ref.requestedAt) && c.status === "pending");
+    if (!claim) continue;
+    claim.payoutTxHash = payoutTxHash;
+    claim.payoutAt = Date.now();
+    marked += 1;
+  }
+  if (marked > 0) await saveClaims(claims);
+  return marked;
+}
+
+// Undoes the marker when a payout transaction didn't land after all (rejected,
+// reverted, dropped), putting the claim back in the queue. Deliberately manual:
+// nothing should decide on its own that money didn't move.
+export async function clearPayoutSubmitted(ref: ClaimRef): Promise<boolean> {
+  const claims = await getClaims();
+  const claim = claims.find((c) => isClaim(c, ref.repoUrl, ref.network, ref.requestedAt) && c.status === "pending");
+  if (!claim) return false;
+  delete claim.payoutTxHash;
+  delete claim.payoutAt;
   await saveClaims(claims);
   return true;
 }

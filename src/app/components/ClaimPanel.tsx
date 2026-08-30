@@ -65,6 +65,7 @@ interface Claimable {
 
 interface Claim {
   repoUrl: string;
+  requestedAt: number;
   network: NetworkKey;
   amount: number;
   status: "pending" | "paid";
@@ -74,6 +75,9 @@ interface Claim {
   paidTxHash?: string;
   paidPrivately?: boolean;
   paidNet?: number;
+  /** A payout transaction is already out for this claim, still confirming. */
+  payoutTxHash?: string;
+  payoutAt?: number;
   /** Operator queue only: how much of this claim the chain still backs. */
   backedAmount?: number;
 }
@@ -379,6 +383,7 @@ export function ClaimPanel() {
   const [adminPending, setAdminPending] = useState<Claim[]>([]);
   const [tips, setTips] = useState<Record<string, number>>({});
   const [submitting, setSubmitting] = useState<string | null>(null);
+  const [releasing, setReleasing] = useState<string | null>(null);
   const [error, setError] = useState<Record<string, string>>({});
   const [safeAddresses, setSafeAddresses] = useState<Record<NetworkKey, string | null>>({
     mainnet: null,
@@ -455,6 +460,24 @@ export function ClaimPanel() {
     }
   };
 
+  // Puts a claim back in the payout queue after its transaction turned out not
+  // to have landed. The operator has to say so: from here, a payout that is
+  // still proving and one that never happened look exactly the same.
+  const releasePayout = async (c: Claim) => {
+    const key = `${c.repoUrl}::${c.network}::${c.requestedAt}`;
+    setReleasing(key);
+    try {
+      await fetch("/api/claims/payout-submitted", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ repoUrl: c.repoUrl, network: c.network, requestedAt: c.requestedAt }),
+      });
+      loadPending();
+    } finally {
+      setReleasing(null);
+    }
+  };
+
   const renderAddressField = (savedAddr?: string) => {
     if (receivingFromWallet) {
       return (
@@ -515,9 +538,16 @@ export function ClaimPanel() {
     // batch. It stays visible with the reason — the operator should see that
     // it was filed, and see why Aegis won't pay it.
     const isBacked = (c: Claim) => (c.backedAmount ?? 0) >= c.amount - 1e-4;
-    const unbacked = adminForNet.filter((c) => !isBacked(c));
-    const batchClaims: BatchClaim[] = adminForNet.filter(isBacked).map((c) => ({
+    // A payout that's already been signed and broadcast is out of the queue
+    // even though the claim still reads as pending — it only flips to paid once
+    // the pool has verified the proof, and offering it again in the meantime is
+    // how the same claim gets paid twice.
+    const inFlight = adminForNet.filter((c) => !!c.payoutTxHash);
+    const settling = adminForNet.filter((c) => !c.payoutTxHash);
+    const unbacked = settling.filter((c) => !isBacked(c));
+    const batchClaims: BatchClaim[] = settling.filter(isBacked).map((c) => ({
       repoUrl: c.repoUrl,
+      requestedAt: c.requestedAt,
       network: c.network,
       amount: c.amount,
       tipPercent: c.tipPercent,
@@ -568,6 +598,44 @@ export function ClaimPanel() {
                 <PayClaimsBatch claims={batchClaims} network={selectedNetwork} onPaid={loadPending} />
               </div>
               )}
+
+              {inFlight.map((c) => {
+                const key = `${c.repoUrl}::${c.network}::${c.requestedAt}`;
+                return (
+                  <div key={`${key}::inflight`} className="ls-card mb-3 border-ls-gray-300 dark:border-ls-gray-700">
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <span className="tag-pending inline-flex items-center gap-1.5 mb-2">
+                          <Loader2 size={11} className="animate-spin" /> Payout sent
+                        </span>
+                        <p className="font-semibold text-black dark:text-white truncate">
+                          {c.repoUrl.replace("https://github.com/", "")}
+                        </p>
+                        {c.githubLogin && <p className="text-xs text-ls-gray-400">@{c.githubLogin}</p>}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="hero-stat text-2xl text-ls-gray-400 leading-none tracking-tight">{c.amount.toFixed(4)}</p>
+                        <p className="text-[11px] font-semibold text-ls-gray-400 mt-0.5">STRK claimed</p>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-ls-gray-500 dark:text-ls-gray-400 mt-3">
+                      A transaction for this is already out and still proving — don&apos;t send it again.{" "}
+                      {c.payoutTxHash && (
+                        <a href={txUrl(c.network, c.payoutTxHash)} target="_blank" rel="noreferrer" className="link-arrow font-mono">
+                          {c.payoutTxHash.slice(0, 10)}…{c.payoutTxHash.slice(-4)} <ExternalLink size={10} />
+                        </a>
+                      )}
+                    </p>
+                    <button
+                      onClick={() => releasePayout(c)}
+                      disabled={releasing === key}
+                      className="btn-ghost text-xs mt-2 disabled:opacity-50"
+                    >
+                      {releasing === key ? "Releasing…" : "That transaction failed — put it back in the queue"}
+                    </button>
+                  </div>
+                );
+              })}
 
               {unbacked.map((c) => (
                 <div key={`${c.repoUrl}::${c.network}::unbacked`} className="ls-card mb-3 border-amber-300 dark:border-amber-800/60">

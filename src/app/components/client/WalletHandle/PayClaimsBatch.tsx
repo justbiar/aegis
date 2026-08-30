@@ -18,6 +18,9 @@ export const POOL_FEE_STRK = 6;
 
 export interface BatchClaim {
   repoUrl: string;
+  // Filing time, which is what identifies this record: a repo that leaks again
+  // is rescued and claimed again, so repoUrl alone points at more than one.
+  requestedAt: number;
   network: "mainnet" | "sepolia";
   amount: number;
   tipPercent: number;
@@ -146,6 +149,25 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
       });
       return;
     }
+
+    // Write down that this payout is out BEFORE waiting on it. The claim stays
+    // pending until the proof verifies, and until then nothing else — a reload,
+    // another tab, this panel rebuilt — knows the money is already on its way.
+    await fetch("/api/claims/payout-submitted", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        txHash: txH,
+        claims: payable.map((r) => ({
+          repoUrl: r.claim.repoUrl,
+          network: r.claim.network,
+          requestedAt: r.claim.requestedAt,
+        })),
+      }),
+    }).catch(() => {
+      // Best-effort: the transaction is already out, and failing to note it
+      // must not abort the confirmation flow below.
+    });
 
     setStatus({ kind: "confirming" });
     const provider = constants.myFrontendProviders[myFrontendProviderIndex];
