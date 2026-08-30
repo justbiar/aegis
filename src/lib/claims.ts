@@ -173,23 +173,40 @@ export async function clearPayoutSubmitted(ref: ClaimRef): Promise<boolean> {
   return true;
 }
 
-export async function markClaimPaid(
-  repoUrl: string,
-  network: Network,
+// Settles every claim one payout transaction covered. This takes the whole
+// batch rather than one claim at a time on purpose: the store is a single list
+// that each write rewrites end to end, so N concurrent calls all start from the
+// same snapshot and the last one to finish erases the others' work — leaving a
+// claim that was just paid sitting in the queue as pending, ready to be paid a
+// second time. Returns the refs it could not find a pending claim for.
+export async function markClaimsPaid(
+  entries: (ClaimRef & { net?: number })[],
   paidTxHash: string,
   paidPrivately: boolean,
-  paidNet?: number,
-): Promise<boolean> {
+): Promise<ClaimRef[]> {
   const claims = await getClaims();
-  const claim = claims.find(
-    (c) => c.repoUrl === repoUrl && c.network === network && c.status === "pending",
-  );
-  if (!claim) return false;
-  claim.status = "paid";
-  claim.paidTxHash = paidTxHash;
-  claim.paidAt = Date.now();
-  claim.paidPrivately = paidPrivately;
-  if (typeof paidNet === "number" && Number.isFinite(paidNet)) claim.paidNet = paidNet;
-  await saveClaims(claims);
-  return true;
+  const missed: ClaimRef[] = [];
+  const settled = new Set<ClaimRecord>();
+
+  for (const entry of entries) {
+    const claim = claims.find(
+      (c) =>
+        !settled.has(c) &&
+        c.status === "pending" &&
+        isClaim(c, entry.repoUrl, entry.network, entry.requestedAt),
+    );
+    if (!claim) {
+      missed.push(entry);
+      continue;
+    }
+    settled.add(claim);
+    claim.status = "paid";
+    claim.paidTxHash = paidTxHash;
+    claim.paidAt = Date.now();
+    claim.paidPrivately = paidPrivately;
+    if (typeof entry.net === "number" && Number.isFinite(entry.net)) claim.paidNet = entry.net;
+  }
+
+  if (settled.size > 0) await saveClaims(claims);
+  return missed;
 }

@@ -2,11 +2,28 @@ import { NextRequest, NextResponse } from "next/server";
 import { RpcProvider } from "starknet";
 import { auth } from "@/auth";
 import { RPC_URL, SAFE_WALLET, type Network } from "@/lib/networks";
-import { markClaimPaid } from "@/lib/claims";
+import { markClaimsPaid, type ClaimRef } from "@/lib/claims";
 
 // GitHub login allowed to mark claims paid — the safe-wallet operator. Same
 // default as the client-side admin gate.
 const ADMIN_LOGIN = (process.env.NEXT_PUBLIC_ADMIN_GITHUB_LOGIN ?? "justbiar").toLowerCase();
+
+// Accepts either a batch ({ claims: [...] }) or a single claim spelled out at
+// the top level, which is how this endpoint was first called.
+function parseEntries(body: any): (ClaimRef & { net?: number })[] {
+  const raw = Array.isArray(body?.claims) ? body.claims : [body];
+  return raw.flatMap((r: any) => {
+    const repoUrl = typeof r?.repoUrl === "string" ? r.repoUrl : null;
+    const network = r?.network as Network | undefined;
+    if (!repoUrl || (network !== "mainnet" && network !== "sepolia")) return [];
+    return [{
+      repoUrl,
+      network,
+      requestedAt: typeof r?.requestedAt === "number" ? r.requestedAt : undefined,
+      net: typeof r?.net === "number" ? r.net : undefined,
+    }];
+  });
+}
 
 // STRK20 privacy pool per network — used only to confirm the tx actually
 // touched the pool (a real payout), not just any successful tx.
@@ -43,12 +60,18 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json().catch(() => null);
-  const repoUrl = body?.repoUrl as string | undefined;
-  const network = body?.network as Network | undefined;
   const txHash = body?.txHash as string | undefined;
-  const net = typeof body?.net === "number" ? body.net : undefined;
-  if (!repoUrl || !network || !txHash || (network !== "mainnet" && network !== "sepolia")) {
-    return NextResponse.json({ error: "repoUrl, a valid network and txHash are required" }, { status: 400 });
+  // One transaction settles a whole batch, so this takes the batch. Sending a
+  // request per claim instead had them race: each rewrites the entire claim
+  // list from its own snapshot, so a claim that was just marked paid could be
+  // written back as pending and then get paid all over again.
+  const entries = parseEntries(body);
+  const network = entries[0]?.network;
+  if (!txHash || entries.length === 0 || !network) {
+    return NextResponse.json({ error: "txHash and at least one claim are required" }, { status: 400 });
+  }
+  if (entries.some((e) => e.network !== network)) {
+    return NextResponse.json({ error: "Every claim in one payout must be on the same network" }, { status: 400 });
   }
 
   const safeAddress = SAFE_WALLET[network];
@@ -77,9 +100,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Could not look up transaction: ${err?.message ?? "unknown error"}` }, { status: 400 });
   }
 
-  const marked = await markClaimPaid(repoUrl, network, txHash, true, net);
-  if (!marked) {
+  const missed = await markClaimsPaid(entries, txHash, true);
+  if (missed.length === entries.length) {
     return NextResponse.json({ error: "No matching pending claim found" }, { status: 404 });
   }
-  return NextResponse.json({ ok: true });
+  // A partial miss still means money moved for the rest, so this isn't an
+  // error — but the operator has to see which records didn't settle.
+  return NextResponse.json({ ok: true, settled: entries.length - missed.length, missed });
 }

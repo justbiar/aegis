@@ -188,34 +188,42 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
       return;
     }
 
-    // One tx settles every payable claim — mark them all paid against the hash.
-    // Every response is checked: this used to report success no matter what the
-    // endpoint said, so a rejected write left the claim pending while the UI
-    // said it was paid and the STRK was already gone.
-    const results = await Promise.all(
-      payable.map(async (r) => {
-        try {
-          const res = await fetch("/api/claims/pay", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              repoUrl: r.claim.repoUrl,
-              network: r.claim.network,
-              txHash: txH,
-              payerAddress: connectedAddress,
-              net: r.net,
-            }),
-          });
-          if (res.ok) return null;
-          const body = await res.json().catch(() => ({}));
-          return { repoUrl: r.claim.repoUrl, message: body?.error ?? `HTTP ${res.status}` };
-        } catch (error: any) {
-          return { repoUrl: r.claim.repoUrl, message: error?.message ?? "request failed" };
-        }
-      })
-    );
+    // One tx settles every payable claim, so they're marked paid in one request.
+    // A request per claim raced: each one rewrote the whole claim list from its
+    // own snapshot, so a claim marked paid could be written back as pending and
+    // then be paid a second time. The response is checked either way — this
+    // used to report success no matter what the endpoint said, leaving a claim
+    // pending while the UI called it paid and the STRK was already gone.
+    let failures: { repoUrl: string; message: string }[] = [];
+    try {
+      const res = await fetch("/api/claims/pay", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          txHash: txH,
+          payerAddress: connectedAddress,
+          claims: payable.map((r) => ({
+            repoUrl: r.claim.repoUrl,
+            network: r.claim.network,
+            requestedAt: r.claim.requestedAt,
+            net: r.net,
+          })),
+        }),
+      });
+      const body = await res.json().catch(() => ({} as any));
+      if (!res.ok) {
+        const message = body?.error ?? `HTTP ${res.status}`;
+        failures = payable.map((r) => ({ repoUrl: r.claim.repoUrl, message }));
+      } else if (Array.isArray(body?.missed) && body.missed.length > 0) {
+        failures = body.missed.map((m: any) => ({
+          repoUrl: m?.repoUrl ?? "unknown repo",
+          message: "no matching pending claim",
+        }));
+      }
+    } catch (error: any) {
+      failures = payable.map((r) => ({ repoUrl: r.claim.repoUrl, message: error?.message ?? "request failed" }));
+    }
 
-    const failures = results.filter((r): r is { repoUrl: string; message: string } => r !== null);
     setStatus(failures.length > 0 ? { kind: "unrecorded", txHash: txH, failures } : { kind: "ok", txHash: txH });
     onPaid();
   };
