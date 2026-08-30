@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { num } from "starknet";
 import type { WALLET_API } from "@starknet-io/types-js";
@@ -67,6 +67,14 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
   const networkName = constants.Strk20Networks[myFrontendProviderIndex];
 
   const [status, setStatus] = useState<Status>({ kind: "idle" });
+  // Hard lock on sending, kept outside React state. `status` alone can't guard
+  // this: it only disables the button on the next render, and it's lost
+  // entirely if this component remounts mid-flight (the wallet popup taking
+  // focus is enough to bounce the connection state and rebuild the panel).
+  // Once a payout transaction has a hash the lock is never released — the STRK
+  // is already gone, and the claim stays pending until the tx confirms, so a
+  // re-enabled button is a second real payment.
+  const sending = useRef(false);
   // Pool registration state — a private transfer needs both the sender and
   // every recipient registered (see isRegisteredInPool). Checked read-only so
   // the batch can skip unregistered recipients and explain why, instead of
@@ -113,7 +121,8 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
     network === "mainnet" ? `https://voyager.online/tx/${h}` : `https://sepolia.voyager.online/tx/${h}`;
 
   const handlePayAll = async () => {
-    if (!myWalletAccount || !connectedAddress || payable.length === 0) return;
+    if (sending.current || !myWalletAccount || !connectedAddress || payable.length === 0) return;
+    sending.current = true;
     setStatus({ kind: "sending" });
     const actions: WALLET_API.STRK20_ACTION[] = payable.map((r) => {
       const amountWei = BigInt(Math.round(r.net * 1e18));
@@ -125,6 +134,9 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
       const r = await myWalletAccount.strk20InvokeTransaction(actions);
       txH = r.transaction_hash;
     } catch (error: any) {
+      // Nothing was submitted — releasing the lock is safe, and the operator
+      // needs to be able to retry after fixing whatever the wallet rejected.
+      sending.current = false;
       const msg = error?.message ?? error?.toString?.() ?? String(error);
       setStatus({
         kind: "error",
