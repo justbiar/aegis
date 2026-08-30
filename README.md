@@ -155,7 +155,10 @@ sequenceDiagram
     Note over Wallet,Pool: Later, all pending claims in one apply_actions call
     Wallet->>Pool: Private "transfer" actions (net amounts, one fee)
     Pool-->>Wallet: Transaction hash
-    Wallet->>Aegis: POST /api/claims/pay (txHash, net)
+    Wallet->>Aegis: POST /api/claims/payout-submitted (txHash)
+    Aegis->>Aegis: Claim leaves the queue — payout already sent
+    Pool-->>Wallet: Proof verified, transaction succeeded
+    Wallet->>Aegis: POST /api/claims/pay (txHash, whole batch)
     Aegis->>Aegis: Admin session + tx touched the pool
     Aegis-->>Owner: Claim status: paid (private, unlinkable)
 ```
@@ -174,6 +177,23 @@ no funds pass through this endpoint — it is bookkeeping. A forged call
 could only corrupt a record, never move money, since nothing reaches a
 claimant without a real wallet-signed transfer.
 
+The failure mode that actually matters here is paying the same claim twice,
+and finding it cost 23 STRK on mainnet. A claim can't be marked paid until
+its transaction confirms, and a private transfer spends minutes proving
+itself — for that entire window the claim still reads as pending. Anything
+that put the button back in front of the operator offered the very same
+payout again: a reload, a second tab, or the panel simply remounting, which
+the wallet popup taking focus is enough to cause. Three things now sit
+between a claim and a second transfer. The button holds a lock that is never
+released once a transaction has a hash, since the funds are already gone. The
+hash is written against the claim the moment it is broadcast, so the queue
+stops offering it and shows it as already sent — and if that transaction
+turns out never to have landed, the operator puts it back by hand, because
+from here "still proving" and "never happened" look identical. And the batch
+is settled in one write: marking each claim in its own request had them
+racing to rewrite the same list, so a claim that had just been paid could be
+written back as pending and offered up all over again.
+
 One thing worth saying plainly, because it surprises people: a private
 payout lands in the recipient's **shielded** balance. It will not appear in
 their public wallet balance at all until they unshield.
@@ -189,6 +209,7 @@ their public wallet balance at all until they unshield.
 - ✅ GitHub-verified claims — a repo owner signs in, we check their login against the repo's owner segment and the rescue ledger, they register a Starknet address
 - ✅ Payout through the real STRK20 shielded pool (mainnet, `strk20.json`), not a plain transfer — safe wallet registers, shields, and pays a claim out as a private note-to-note transfer (no amount, no parties on-chain); a claim sits pending until it's paid this way, deliberately batched with others rather than instant, since an isolated deposit-then-withdraw pair is the one thing actually correlatable in this scheme
 - ✅ Batched payouts through a single `apply_actions` call — the pool charges its 6 STRK fee once per call rather than once per transfer, so every pending claim on a network is paid in one transaction and shares one fee, prorated across the claims instead of charged to each. Recipients are checked for pool registration on-chain first, so an unregistered address is skipped rather than reverting the whole batch. See [docs/FINDINGS.md](docs/FINDINGS.md).
+- ✅ Payouts that can't fire twice — a claim leaves the queue the moment its transaction is broadcast rather than when it confirms, which on a proof-verifying transfer is minutes later; the batch is settled in a single write, and a payout that never landed is put back by hand
 - 🚧 Fully automatic private payout — right now the shield/private-transfer step needs a connected wallet (no mainnet proving service is publicly available yet for a headless signer; see [issue #124](https://github.com/starkience/strk20-hackathon/issues/124)), so it's a deliberate manual step rather than instant
 
 ## Field notes
