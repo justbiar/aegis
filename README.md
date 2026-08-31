@@ -198,6 +198,31 @@ One thing worth saying plainly, because it surprises people: a private
 payout lands in the recipient's **shielded** balance. It will not appear in
 their public wallet balance at all until they unshield.
 
+## Anonymizer contract
+
+Spending shielded funds normally means unshielding first, which puts the money
+back on a public address under your own name. An anonymizer contract is the
+pool's way around that: inside a single private transaction it withdraws to a
+contract, calls `privacy_invoke` on it, and takes the tokens back into fresh
+notes. The public leg is executed by the contract, not by you, so the action
+isn't linkable to the balance that funded it.
+
+`cairo/src/lib.cairo` is Aegis's implementation of that interface —
+`StrkInvokeHelper`, deployed on mainnet at
+[`0x78ae662e…a6f8735b`](https://voyager.online/contract/0x78ae662e0cc6d1ab2cfeaf2a51ba8783d88e31886f88a794d142f95a6f8735b)
+and declared in `strk20.json`. It asserts its caller really is the pool, reads
+the STRK the withdraw phase just sent it, approves the pool to take it back,
+and returns an `OpenNoteDeposit` so the same amount is re-shielded into a new
+note. The counter and `Invoked` event it writes on the way through are the
+point: they prove `privacy_invoke` ran arbitrary logic atomically between the
+withdraw and the re-shield, which is what a real private swap or deposit would
+be doing there instead.
+
+It is deliberately an echo rather than a DeFi action — the useful version of
+this needs the same proving service the rescue bot is missing (see below), so
+what ships is the integration proven end to end on mainnet rather than a route
+described but never taken.
+
 ## What's actually working right now
 
 - ✅ **~5,900 repositories under watch** — the 152 registered sprint projects plus ~5,700 Starknet repositories discovered through search, swept continuously alongside their open pull requests
