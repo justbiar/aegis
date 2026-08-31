@@ -51,7 +51,7 @@ interface Props {
 type Status =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "confirming" }
+  | { kind: "confirming"; txHash: string }
   | { kind: "ok"; txHash: string }
   // The transfer landed but Aegis failed to write it down. Money moved; the
   // claim still reads as pending. The operator has to see this, and has to
@@ -169,7 +169,7 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
       // must not abort the confirmation flow below.
     });
 
-    setStatus({ kind: "confirming" });
+    setStatus({ kind: "confirming", txHash: txH });
     const provider = constants.myFrontendProviders[myFrontendProviderIndex];
     try {
       const txR: any = await provider.waitForTransaction(txH, { retries: 400, retryInterval: 3000 });
@@ -281,6 +281,30 @@ export default function PayClaimsBatch({ claims, network, onPaid }: Props) {
         </p>
       ) : (
         <>
+          {status.kind === "confirming" && (
+            // The wallet has been seen asking for a second signature on a
+            // transfer it already broadcast. Nothing here can refuse that on
+            // the operator's behalf — the request comes from the wallet, not
+            // from this page — so the one defence is knowing the money is
+            // already out before deciding.
+            <div className="rounded-xl border border-amber-300 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 mb-3">
+              <p className="text-xs font-semibold text-amber-700 dark:text-amber-400">
+                Already sent — reject any further signature request
+              </p>
+              <p className="text-xs text-ls-gray-600 dark:text-ls-gray-300 mt-1">
+                This payout is on-chain and only needed one signature. If your wallet asks again, approving it sends a
+                second, identical payment.
+              </p>
+              <a
+                href={explorerTxUrl(status.txHash)}
+                target="_blank"
+                rel="noreferrer"
+                className="link-arrow font-mono text-xs mt-1.5 inline-block"
+              >
+                {status.txHash.slice(0, 12)}…{status.txHash.slice(-4)}
+              </a>
+            </div>
+          )}
           <button onClick={handlePayAll} disabled={busy} className="btn-primary text-sm px-5 py-2.5 disabled:opacity-50">
             {status.kind === "sending"
               ? "Confirm in your wallet…"
