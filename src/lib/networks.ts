@@ -7,12 +7,19 @@ export type Network = "mainnet" | "sepolia";
 // them rather than look one up.
 export const NETWORKS: Network[] = ["mainnet", "sepolia"];
 
+// Server-side only, so the plain name is preferred and the NEXT_PUBLIC_ one is
+// kept as a fallback for deployments still setting it. Everything here runs on
+// the server; the browser reaches the chain through /api/rpc/<network>, which
+// reads the same pair. Setting only PROVIDER_URL used to leave this null —
+// balances, provenance and every claim figure silently went blank.
+const PROVIDER_KEY = process.env.PROVIDER_URL ?? process.env.NEXT_PUBLIC_PROVIDER_URL;
+
 export const RPC_URL: Record<Network, string | null> = {
-  mainnet: process.env.NEXT_PUBLIC_PROVIDER_URL
-    ? `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/${process.env.NEXT_PUBLIC_PROVIDER_URL}`
+  mainnet: PROVIDER_KEY
+    ? `https://starknet-mainnet.g.alchemy.com/starknet/version/rpc/v0_10/${PROVIDER_KEY}`
     : null,
-  sepolia: process.env.NEXT_PUBLIC_PROVIDER_URL
-    ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/${process.env.NEXT_PUBLIC_PROVIDER_URL}`
+  sepolia: PROVIDER_KEY
+    ? `https://starknet-sepolia.g.alchemy.com/starknet/version/rpc/v0_10/${PROVIDER_KEY}`
     : null,
 };
 

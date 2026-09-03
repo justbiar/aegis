@@ -19,7 +19,8 @@ import { runHotScan } from "../src/lib/hotScan";
 // `npm run scan -- --hot` runs the fast lane instead of a full pass.
 const hotOnly = process.argv.includes("--hot");
 
-const required = ["KV_REST_API_URL", "KV_REST_API_TOKEN", "NEXT_PUBLIC_PROVIDER_URL"];
+const required = ["KV_REST_API_URL", "KV_REST_API_TOKEN"];
+if (!process.env.PROVIDER_URL && !process.env.NEXT_PUBLIC_PROVIDER_URL) required.push("PROVIDER_URL");
 const missing = required.filter((name) => !process.env[name]);
 if (missing.length > 0) {
   // Without KV the scan runs and throws the result away; without an RPC it

@@ -40,10 +40,12 @@ jobs:
         env:
           KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
           KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
-          NEXT_PUBLIC_PROVIDER_URL: ${{ secrets.PROVIDER_URL }}
+          PROVIDER_URL: ${{ secrets.PROVIDER_URL }}
           SAFE_WALLET_ADDRESS: ${{ secrets.SAFE_WALLET_ADDRESS }}
           SAFE_WALLET_ADDRESS_MAINNET: ${{ secrets.SAFE_WALLET_ADDRESS_MAINNET }}
-          NON_VICTIM_FUNDERS: ${{ secrets.NON_VICTIM_FUNDERS }}
+          # Raises GitHub's rate limit for the pull-request pass. Provided by
+          # Actions itself, so there is nothing to configure.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Seconds between full scans, and between fast-lane re-checks of the
           # repos already known to be leaking. The full pass is what costs; the
           # fast lane is about a thousandth of it, which is why it can run in
