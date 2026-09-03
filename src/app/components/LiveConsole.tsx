@@ -310,10 +310,14 @@ export function LiveConsole({ embedded = false, vaultBanner }: { embedded?: bool
     loadCoverage();
     loadVault();
     loadEpochs();
-    const reg = setInterval(loadRegistry, 60000);
-    const cov = setInterval(loadCoverage, 60000);
-    const v = setInterval(loadVault, 20000);
-    const e = setInterval(loadEpochs, 8000);
+    // Poll no faster than the data actually changes. These were 8-60s, which
+    // for a page someone leaves open is thousands of function calls an hour for
+    // answers that move once a scan — enough of the hosting budget to take the
+    // whole deployment offline, which it did.
+    const reg = setInterval(loadRegistry, 300_000);
+    const cov = setInterval(loadCoverage, 300_000);
+    const v = setInterval(loadVault, 60_000);
+    const e = setInterval(loadEpochs, 30_000);
     return () => { clearInterval(reg); clearInterval(cov); clearInterval(v); clearInterval(e); };
   }, []);
 
