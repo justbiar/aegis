@@ -30,11 +30,17 @@ jobs:
           # Seconds between full scans. Lower = new leaks found sooner, but more
           # load on Alchemy (RPC compute units) and Vercel (function execution) —
           # those quotas, not GitHub, are the real limit. Tune here.
-          SLEEP: "90"
+          #
+          # This was 90s, which is ~960 full scans and ~5,800 fast-lane checks a
+          # day. That is the pace that exhausted the hosting plan's monthly
+          # function budget and left the whole deployment returning 402, so the
+          # scanner ran often and the site did not run at all. A watch nobody can
+          # reach is worth less than a slower one that stays up.
+          SLEEP: "900"
           # Seconds between hot checks, and how many fit inside one SLEEP.
-          # 6 x 15s = the 90s above; keep them consistent when tuning.
-          HOT_SLEEP: "15"
-          HOT_PER_CYCLE: "6"
+          # 5 x 180s = the 900s above; keep them consistent when tuning.
+          HOT_SLEEP: "180"
+          HOT_PER_CYCLE: "5"
           # Loop for ~5h45m, just inside the 6-hour ceiling on a job. This used
           # to be 50 minutes on the assumption that the */5 heartbeat restarts it
           # promptly. It does not: starts were ~15 minutes apart until 26 Aug and
