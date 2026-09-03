@@ -19,52 +19,51 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
-      - name: Continuously trigger the registry scan
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+
+      # The scan runs HERE, on the runner, not by asking the website to do it.
+      #
+      # It used to be a curl at an endpoint, which charged every pass to the
+      # same CPU allowance that serves the site. The scanning is by far the
+      # heavier half — roughly 1200 file reads, entropy and Stark-curve checks
+      # per pass — so the site's own budget went on scanning and the host
+      # eventually paused the deployment. That trade is backwards: it stopped
+      # the product to keep the bot running. Runner minutes are free on a public
+      # repository, and the result reaches the site the same way either way,
+      # through KV.
+      - name: Scan continuously
         env:
-          URL: https://aegis-peach-six.vercel.app/api/scan-registry
-          # The fast lane: re-checks only the repos already known to be leaking.
-          # A full pass reads ~1200 files to answer "is anyone leaking?"; this
-          # answers "is the known leak funded yet?" in a handful of reads, so it
-          # can run every few seconds without moving the quota needle.
-          HOT: https://aegis-peach-six.vercel.app/api/scan-hot
-          # Seconds between full scans. Lower = new leaks found sooner, but more
-          # load on Alchemy (RPC compute units) and Vercel (function execution) —
-          # those quotas, not GitHub, are the real limit. Tune here.
-          #
-          # This was 90s, which is ~960 full scans and ~5,800 fast-lane checks a
-          # day. That is the pace that exhausted the hosting plan's monthly
-          # function budget and left the whole deployment returning 402, so the
-          # scanner ran often and the site did not run at all. A watch nobody can
-          # reach is worth less than a slower one that stays up.
+          KV_REST_API_URL: ${{ secrets.KV_REST_API_URL }}
+          KV_REST_API_TOKEN: ${{ secrets.KV_REST_API_TOKEN }}
+          NEXT_PUBLIC_PROVIDER_URL: ${{ secrets.PROVIDER_URL }}
+          SAFE_WALLET_ADDRESS: ${{ secrets.SAFE_WALLET_ADDRESS }}
+          SAFE_WALLET_ADDRESS_MAINNET: ${{ secrets.SAFE_WALLET_ADDRESS_MAINNET }}
+          NON_VICTIM_FUNDERS: ${{ secrets.NON_VICTIM_FUNDERS }}
+          # Seconds between full scans, and between fast-lane re-checks of the
+          # repos already known to be leaking. The full pass is what costs; the
+          # fast lane is about a thousandth of it, which is why it can run in
+          # between.
           SLEEP: "900"
-          # Seconds between hot checks, and how many fit inside one SLEEP.
-          # 5 x 180s = the 900s above; keep them consistent when tuning.
           HOT_SLEEP: "180"
           HOT_PER_CYCLE: "5"
-          # Loop for ~5h45m, just inside the 6-hour ceiling on a job. This used
-          # to be 50 minutes on the assumption that the */5 heartbeat restarts it
-          # promptly. It does not: starts were ~15 minutes apart until 26 Aug and
-          # then 11-18 hours apart, which left the scanner up about 6% of the day
-          # and a leak funded in the gap sitting there until someone loaded the
-          # site. Minutes are free on a public repo, so the loop runs as long as
-          # one job is allowed to, and the handoff step below closes the rest.
+          # Loop for ~5h45m, just inside the 6-hour ceiling on a job. GitHub's
+          # `schedule` is best-effort and drifted to 11-18 hours between starts,
+          # which left the scanner up about 6% of the day, so a run lasts as
+          # long as one job may and hands off to the next itself below.
           RUN_FOR: "20700"
         run: |
           end=$((SECONDS + RUN_FOR))
           while [ "$SECONDS" -lt "$end" ]; do
-            if curl -sf --max-time 150 "$URL" -o /dev/null; then
-              echo "scan ok   $(date -u +%H:%M:%S)"
-            else
-              echo "scan fail $(date -u +%H:%M:%S)"
-            fi
-            # Fill the gap until the next full scan with fast-lane checks rather
-            # than sleeping through it. This is what closes the window between
-            # someone funding a leaked wallet and the sweep.
+            npm run --silent scan || echo "scan failed $(date -u +%H:%M:%S)"
             h=0
             while [ "$h" -lt "$HOT_PER_CYCLE" ] && [ "$SECONDS" -lt "$end" ]; do
               sleep "$HOT_SLEEP"
-              curl -sf --max-time 25 "$HOT" -o /dev/null \
-                || echo "hot fail  $(date -u +%H:%M:%S)"
+              npm run --silent scan -- --hot || echo "hot failed $(date -u +%H:%M:%S)"
               h=$((h + 1))
             done
           done
