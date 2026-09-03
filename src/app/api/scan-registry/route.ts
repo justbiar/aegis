@@ -3,6 +3,7 @@ import { fetchRegistry } from "@/lib/registry";
 import { scanRepo, maskRepo, type ScanResult } from "@/lib/scan";
 import { recordEpoch } from "@/lib/epochs";
 import { syncHotlist } from "@/lib/hotlist";
+import { saveLastScan } from "@/lib/lastscan";
 
 export const maxDuration = 120;
 
@@ -63,6 +64,9 @@ export async function GET() {
     // Hand anything still leaking to the fast lane, which re-checks it every
     // few seconds instead of once a minute.
     await syncHotlist(results, "full");
+    // Publish the result so the Coverage table can render it instead of asking
+    // for a scan of its own on every visit.
+    await saveLastScan(results);
     // Record this scan as one epoch (best-effort — never block the response).
     await recordEpoch({ ts: Date.now(), durationMs: Date.now() - startedAt, source: "registry", ...summarize(results) });
     return NextResponse.json({ results });

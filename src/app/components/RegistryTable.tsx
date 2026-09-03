@@ -8,6 +8,19 @@ import type { ScanResult } from "@/lib/scan";
 
 // Shared status badge, used by both the desktop table and the mobile card
 // list so the two layouts never drift out of sync visually.
+// How long ago the reading on screen was taken. The table shows the last scan
+// rather than running one, so it has to say when that was — a status nobody
+// can date is worth less than a slightly old one that is honest about its age.
+function timeAgo(ts: number): string {
+  const seconds = Math.max(0, Math.round((Date.now() - ts) / 1000));
+  if (seconds < 90) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 function StatusBadge({ entry, result, scanning }: { entry: RegistryEntry; result?: ScanResult; scanning: boolean }) {
   if (!result) {
     return (
@@ -76,6 +89,7 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
   const [error, setError] = useState("");
   const [scanResults, setScanResults] = useState<Record<string, ScanResult>>({});
   const [scanning, setScanning] = useState(false);
+  const [scannedAt, setScannedAt] = useState(0);
   // Collapsed by default — the full 60+ project list otherwise dominates the
   // page; the stats strip above already gives the at-a-glance summary.
   const [expanded, setExpanded] = useState(false);
@@ -107,6 +121,7 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
       const byRepo: Record<string, ScanResult> = {};
       for (const r of results) byRepo[r.repoUrl] = r;
       setScanResults(byRepo);
+      setScannedAt(Date.now());
       onResults?.(results);
     } catch (e: any) {
       setError(e.message ?? "Scan failed");
@@ -115,10 +130,34 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
     }
   };
 
-  // Auto-scan on every visit — this is the only trigger for now, no cron yet.
+  // Read what the last scan found rather than running one. A visit used to
+  // trigger a full pass over every watched repository — written when nothing
+  // else did, but a loop has been scanning continuously for a while, so each
+  // visitor was paying to re-derive an answer that already existed. It is the
+  // largest thing this project spends CPU on, and it took the deployment
+  // offline. A page load also has no business signing a rescue.
+  //
+  // Only if there is no cached scan at all does this fall back to running one,
+  // so a fresh deployment still fills the table.
   useEffect(() => {
-    load().then((loaded) => {
-      if (loaded.length > 0) scan();
+    load().then(async (loaded) => {
+      if (loaded.length === 0) return;
+      try {
+        const res = await fetch("/api/last-scan");
+        const data = await res.json();
+        const results = (data?.results ?? []) as ScanResult[];
+        if (results.length > 0) {
+          const byRepo: Record<string, ScanResult> = {};
+          for (const r of results) byRepo[r.repoUrl] = r;
+          setScanResults(byRepo);
+          setScannedAt(data.ts ?? 0);
+          onResults?.(results);
+          return;
+        }
+      } catch {
+        // fall through to a live scan
+      }
+      scan();
     });
   }, []);
 
@@ -131,6 +170,7 @@ export function RegistryTable({ onResults }: RegistryTableProps = {}) {
           </p>
           <p className="text-sm text-ls-gray-500 dark:text-ls-gray-400 mt-0.5">
             {entries.length} registered {entries.length === 1 ? "project" : "projects"}
+            {scannedAt > 0 && <> · scanned {timeAgo(scannedAt)}</>}
           </p>
         </div>
         <div className="flex items-center gap-4 shrink-0">
